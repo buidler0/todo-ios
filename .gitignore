@@ -39,3 +39,12 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# From the old shared prototypes repo
+.venv/
+__pycache__/
+.ipynb_checkpoints/
+.env
+build/
+.env.*
+!.env.example
