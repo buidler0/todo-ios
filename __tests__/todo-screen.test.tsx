@@ -545,3 +545,86 @@ test('a saved list with no pin field loads with every to-do unpinned', async () 
   expect(screen.getByRole('button', { name: 'Pin Buy bread' })).toBeOnTheScreen();
   expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread']);
 });
+
+test('mark all done and mark all not done each offer an undo with their own message', async () => {
+  await renderWithThree();
+  expect(screen.queryByText(/^Marked all/)).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  expect(screen.getByText('Marked all done.')).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all not done' }));
+  expect(screen.getByText('Marked all not done.')).toBeOnTheScreen();
+  expect(screen.queryByText('Marked all done.')).toBeNull();
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+});
+
+test('undoing a mark all gives every to-do its previous done state back and saves', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(screen.getByRole('checkbox', { name: 'Buy milk' })).not.toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy bread' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy eggs' })).not.toBeChecked();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved.map((t: { done: boolean }) => t.done)).toEqual([false, true, false]);
+});
+
+test('undoing a mark all restores the done state from just before it, even for a to-do ticked since, and leaves a new to-do alone', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  addTodo('Buy rye');
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(screen.getByRole('checkbox', { name: 'Buy milk' })).not.toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy bread' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy eggs' })).not.toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy rye' })).not.toBeChecked();
+});
+
+test('the mark all undo offer expires after 5 seconds', async () => {
+  await renderWithThree();
+  jest.useFakeTimers();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  act(() => jest.advanceTimersByTime(4999));
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+
+  act(() => jest.advanceTimersByTime(1));
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('a delete replaces a pending mark all undo', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
+  expect(screen.getByText('To-do deleted.')).toBeOnTheScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(screen.getByRole('checkbox', { name: 'Buy milk' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy bread' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy eggs' })).toBeChecked();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('a mark all replaces a pending delete undo', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(screen.queryByText('Buy milk')).toBeNull();
+  expect(screen.getByRole('checkbox', { name: 'Buy bread' })).not.toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy eggs' })).not.toBeChecked();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
