@@ -81,6 +81,7 @@ export default function TodoScreen() {
       </View>
       <FlatList
         data={todos}
+        keyboardShouldPersistTaps="handled"
         keyExtractor={(t) => t.id}
         ListEmptyComponent={<Text style={styles.empty}>Nothing to do yet.</Text>}
         renderItem={({ item }) =>
