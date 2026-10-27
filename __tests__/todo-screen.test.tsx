@@ -451,3 +451,88 @@ test('a to-do can change its own title to a different case', async () => {
   expect(screen.getByText('BUY MILK')).toBeOnTheScreen();
   expect(screen.queryByLabelText(/^Edit Buy milk$/)).toBeNull();
 });
+
+const TOO_LONG = 'Keep it to 60 characters.';
+
+test('refuses a 61-character add, keeps the draft, and clears the message on typing', async () => {
+  await renderWithThree();
+  const long = 'a'.repeat(61);
+
+  addTodo(long);
+
+  expect(screen.getByText(TOO_LONG)).toBeOnTheScreen();
+  expect(screen.getByPlaceholderText('What needs doing?').props.value).toBe(long);
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toHaveLength(3);
+
+  fireEvent.changeText(screen.getByPlaceholderText('What needs doing?'), 'a'.repeat(60));
+  expect(screen.queryByText(TOO_LONG)).toBeNull();
+});
+
+test('adds a title of exactly 60 characters, with or without outer spaces', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  const sixty = 'a'.repeat(60);
+
+  addTodo(sixty);
+  addTodo(`  ${'b'.repeat(60)}  `);
+
+  expect(screen.queryByText(TOO_LONG)).toBeNull();
+  expect(titlesInOrder()).toEqual([sixty, 'b'.repeat(60)]);
+});
+
+test('refuses a 61-character edit, keeps the old title and editing open, and clears the message on typing', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'a'.repeat(61));
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(screen.getByText(TOO_LONG)).toBeOnTheScreen();
+  expect(screen.getByLabelText('Edit Buy bread')).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Save' })).toBeOnTheScreen();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([
+    { title: 'Buy milk' },
+    { title: 'Buy bread' },
+    { title: 'Buy eggs' },
+  ]);
+
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'a'.repeat(60));
+  expect(screen.queryByText(TOO_LONG)).toBeNull();
+});
+
+test('saves an edit of exactly 60 characters', async () => {
+  await renderWithThree();
+  const sixty = 'c'.repeat(60);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), ` ${sixty} `);
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(screen.queryByText(TOO_LONG)).toBeNull();
+  expect(titlesInOrder()).toEqual(['Buy milk', sixty, 'Buy eggs']);
+});
+
+test('a too-long title that also duplicates a saved one shows the length message', async () => {
+  const long = 'd'.repeat(61);
+  await AsyncStorage.setItem('todos', JSON.stringify([{ id: '1', title: long, done: false }]));
+  render(<TodoScreen />);
+  await screen.findByRole('checkbox', { name: long });
+
+  addTodo(long);
+
+  expect(screen.getByText(TOO_LONG)).toBeOnTheScreen();
+  expect(screen.queryByText('Already on the list.')).toBeNull();
+});
+
+test('sixty emoji count as 60 characters', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+
+  addTodo('😀'.repeat(60));
+
+  expect(screen.queryByText(TOO_LONG)).toBeNull();
+  expect(titlesInOrder()).toEqual(['😀'.repeat(60)]);
+});

@@ -28,7 +28,23 @@ const FILTERS: Record<Filter, (t: Todo) => boolean> = {
 };
 const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
 
+const MAX_TITLE = 60;
+
+type TitleError = 'tooLong' | 'duplicate';
+
+const TITLE_ERROR_TEXT: Record<TitleError, string> = {
+  tooLong: 'Keep it to 60 characters.',
+  duplicate: 'Already on the list.',
+};
+
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+function titleProblem(title: string, others: readonly Todo[]): TitleError | null {
+  const codePointCount = [...title].length;
+  if (codePointCount > MAX_TITLE) return 'tooLong';
+  if (others.some((t) => sameTitle(t.title, title))) return 'duplicate';
+  return null;
+}
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -75,7 +91,8 @@ export default function TodoScreen() {
   const [editDraft, setEditDraft] = useState('');
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
-  const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
+  const [addError, setAddError] = useState<TitleError | null>(null);
+  const [editError, setEditError] = useState<TitleError | null>(null);
   const [lastDeleted, setLastDeleted] = useState<{ todo: Todo; index: number } | null>(null);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
@@ -109,25 +126,22 @@ export default function TodoScreen() {
     return () => clearTimeout(timer);
   }, [lastDeleted]);
 
-  function clearDuplicate(source: 'add' | 'edit') {
-    setDuplicateIn((current) => (current === source ? null : current));
-  }
-
   function changeDraft(text: string) {
     setDraft(text);
-    clearDuplicate('add');
+    setAddError(null);
   }
 
   function changeEditDraft(text: string) {
     setEditDraft(text);
-    clearDuplicate('edit');
+    setEditError(null);
   }
 
   function addTodo() {
     const title = draft.trim();
     if (!title) return;
-    if (todos.some((t) => sameTitle(t.title, title))) {
-      setDuplicateIn('add');
+    const problem = titleProblem(title, todos);
+    if (problem) {
+      setAddError(problem);
       return;
     }
     setTodos((current) => [...current, { id: newId(), title, done: false }]);
@@ -152,22 +166,23 @@ export default function TodoScreen() {
   function startEditing(todo: Todo) {
     setEditingId(todo.id);
     setEditDraft(todo.title);
-    clearDuplicate('edit');
+    setEditError(null);
   }
 
   function cancelEdit() {
     setEditingId(null);
-    clearDuplicate('edit');
+    setEditError(null);
   }
 
   function saveEdit() {
     const title = editDraft.trim();
-    if (todos.some((t) => t.id !== editingId && sameTitle(t.title, title))) {
-      setDuplicateIn('edit');
-      return;
-    }
     // An empty save keeps the old text rather than blanking the to-do.
     if (title) {
+      const problem = titleProblem(title, todos.filter((t) => t.id !== editingId));
+      if (problem) {
+        setEditError(problem);
+        return;
+      }
       setTodos((current) => current.map((t) => (t.id === editingId ? { ...t, title } : t)));
     }
     cancelEdit();
@@ -223,7 +238,7 @@ export default function TodoScreen() {
               <Text style={styles.addButtonText}>Add</Text>
             </Pressable>
           </View>
-          {duplicateIn === 'add' && <Text style={styles.duplicate}>Already on the list.</Text>}
+          {addError && <Text style={styles.error}>{TITLE_ERROR_TEXT[addError]}</Text>}
         </View>
         <TextInput
           style={[styles.input, styles.search, { color: textColor }]}
@@ -288,7 +303,7 @@ export default function TodoScreen() {
                     </Pressable>
                   </View>
                 </View>
-                {duplicateIn === 'edit' && <Text style={styles.duplicate}>Already on the list.</Text>}
+                {editError && <Text style={styles.error}>{TITLE_ERROR_TEXT[editError]}</Text>}
               </View>
             ) : (
             <View style={styles.row}>
@@ -386,7 +401,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  duplicate: {
+  error: {
     color: '#c0392b',
     marginTop: 6,
   },
