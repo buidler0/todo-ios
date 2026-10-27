@@ -31,7 +31,7 @@ test('adds a to-do and ticks it done', async () => {
   expect(screen.getByText('Buy milk')).toHaveStyle({ textDecorationLine: 'line-through' });
 });
 
-test('edits a to-do, ignoring cancel and empty saves', async () => {
+test('edits a to-do; cancel keeps it and an empty save deletes it with an undo', async () => {
   render(<TodoScreen />);
   await screen.findByText('Nothing to do yet.');
 
@@ -46,6 +46,10 @@ test('edits a to-do, ignoring cancel and empty saves', async () => {
   fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
   fireEvent.changeText(screen.getByLabelText('Edit Buy milk'), '   ');
   fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  expect(screen.queryByText('Buy milk')).toBeNull();
+  expect(screen.queryByLabelText('Edit Buy milk')).toBeNull();
+  expect(screen.getByText('To-do deleted.')).toBeOnTheScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
   expect(screen.getByText('Buy milk')).toBeOnTheScreen();
 
   fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
@@ -657,6 +661,31 @@ test.each(['toString', 'nope'])('a garbage saved filter %j loads as All', async 
   await screen.findByRole('checkbox', { name: 'Buy milk' });
   await act(async () => {});
   expect(screen.getByRole('button', { name: 'All' })).toBeSelected();
+});
+
+test('an empty edit save follows the delete undo rules', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy milk'), '');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  expect(screen.queryByText('Marked all done.')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(screen.getByRole('checkbox', { name: 'Buy milk' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy bread' })).toBeChecked();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+
+  jest.useFakeTimers();
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy eggs' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy eggs'), ' ');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  act(() => jest.advanceTimersByTime(4999));
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+  act(() => jest.advanceTimersByTime(1));
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  expect(screen.queryByText('Buy eggs')).toBeNull();
 });
 
 test('a to-do added and a filter tapped before the first load finishes survive it', async () => {

@@ -204,16 +204,18 @@ export default function TodoScreen() {
     clearDuplicate('edit');
   }
 
-  function saveEdit() {
+  function saveEdit(id: string) {
     const title = editDraft.trim();
-    if (todos.some((t) => t.id !== editingId && sameTitle(t.title, title))) {
+    if (!title) {
+      deleteTodo(id);
+      cancelEdit();
+      return;
+    }
+    if (todos.some((t) => t.id !== id && sameTitle(t.title, title))) {
       setDuplicateIn('edit');
       return;
     }
-    // An empty save keeps the old text rather than blanking the to-do.
-    if (title) {
-      setTodos((current) => current.map((t) => (t.id === editingId ? { ...t, title } : t)));
-    }
+    setTodos((current) => current.map((t) => (t.id === id ? { ...t, title } : t)));
     cancelEdit();
   }
 
@@ -324,13 +326,13 @@ export default function TodoScreen() {
                     style={[styles.input, { color: textColor }]}
                     value={editDraft}
                     onChangeText={changeEditDraft}
-                    onSubmitEditing={saveEdit}
+                    onSubmitEditing={() => saveEdit(item.id)}
                     returnKeyType="done"
                     autoFocus
                     accessibilityLabel={`Edit ${item.title}`}
                   />
                   <View style={styles.editActions}>
-                    <Pressable onPress={saveEdit} accessibilityRole="button" hitSlop={8}>
+                    <Pressable onPress={() => saveEdit(item.id)} accessibilityRole="button" hitSlop={8}>
                       <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Save</Text>
                     </Pressable>
                     <Pressable onPress={cancelEdit} accessibilityRole="button" hitSlop={8}>
