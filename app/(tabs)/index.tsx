@@ -1,6 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useEffect, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, TextInput } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View as NativeView,
+} from 'react-native';
 
 import { Text, View, useThemeColor } from '@/components/Themed';
 import Colors from '@/constants/Colors';
@@ -41,6 +49,9 @@ export default function TodoScreen() {
   const [lastDeleted, setLastDeleted] = useState<{ todo: Todo; index: number } | null>(null);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
+  const backgroundColor = useThemeColor({}, 'background');
+  const contentRef = useRef<NativeView>(null);
+  const [windowY, setWindowY] = useState(0);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((saved) => {
@@ -107,125 +118,137 @@ export default function TodoScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.inputRow}>
-        <TextInput
-          style={[styles.input, { color: textColor }]}
-          placeholder="What needs doing?"
-          placeholderTextColor="#999"
-          value={draft}
-          onChangeText={setDraft}
-          onSubmitEditing={addTodo}
-          returnKeyType="done"
-        />
-        <Pressable
-          style={[styles.addButton, { backgroundColor: Colors.light.tint }]}
-          onPress={addTodo}
-          accessibilityRole="button">
-          <Text style={styles.addButtonText}>Add</Text>
-        </Pressable>
-      </View>
-      <View style={styles.filters}>
-        {FILTER_NAMES.map((name) => {
-          const selected = name === filter;
-          return (
-            <Pressable
-              key={name}
-              style={[
-                styles.filterButton,
-                selected && { backgroundColor: Colors.light.tint },
-              ]}
-              onPress={() => setFilter(name)}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}>
-              <Text style={selected && styles.filterSelectedText}>{name}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-      <FlatList
-        data={visibleTodos}
-        keyboardShouldPersistTaps="handled"
-        keyExtractor={(t) => t.id}
-        ListEmptyComponent={
-          <Text style={styles.empty}>
-            {todos.length ? `No ${filter.toLowerCase()} to-dos.` : 'Nothing to do yet.'}
-          </Text>
-        }
-        renderItem={({ item }) =>
-          item.id === editingId ? (
-            <View style={styles.row}>
-              <TextInput
-                style={[styles.input, { color: textColor }]}
-                value={editDraft}
-                onChangeText={setEditDraft}
-                onSubmitEditing={saveEdit}
-                returnKeyType="done"
-                autoFocus
-                accessibilityLabel={`Edit ${item.title}`}
-              />
-              <View style={styles.editActions}>
-                <Pressable onPress={saveEdit} accessibilityRole="button" hitSlop={8}>
-                  <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Save</Text>
-                </Pressable>
-                <Pressable onPress={() => setEditingId(null)} accessibilityRole="button" hitSlop={8}>
-                  <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Cancel</Text>
-                </Pressable>
-              </View>
-            </View>
-          ) : (
-          <View style={styles.row}>
-            <View style={styles.rowMain}>
-              <Pressable
-                onPress={() => toggleTodo(item.id)}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: item.done }}
-                accessibilityLabel={item.title}
-                hitSlop={8}>
-                <Text style={styles.check}>{item.done ? '☑' : '☐'}</Text>
-              </Pressable>
-              <Pressable
-                style={styles.titlePress}
-                onPress={() => startEditing(item)}
-                accessibilityRole="button"
-                accessibilityLabel={`Edit ${item.title}`}>
-                <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
-              </Pressable>
-            </View>
-            <Pressable
-              onPress={() => deleteTodo(item.id)}
-              accessibilityRole="button"
-              accessibilityLabel={`Delete ${item.title}`}
-              hitSlop={8}>
-              <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Delete</Text>
-            </Pressable>
-          </View>
-          )
-        }
-      />
-      {todos.length > 0 && (
-        <View style={styles.footer}>
-          <Text>{`${remaining} ${remaining === 1 ? 'item' : 'items'} left`}</Text>
-          {remaining < todos.length && (
-            <Pressable onPress={clearCompleted} accessibilityRole="button" hitSlop={8}>
-              <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Clear completed</Text>
-            </Pressable>
-          )}
-        </View>
-      )}
-      {lastDeleted && (
-        <View style={styles.undoBar}>
-          <Text>To-do deleted.</Text>
-          <Pressable onPress={undoDelete} accessibilityRole="button" hitSlop={8}>
-            <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Undo</Text>
+    <KeyboardAvoidingView
+      style={[styles.flex, { backgroundColor }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      // KeyboardAvoidingView measures itself relative to its parent, so it needs its window top (the header).
+      keyboardVerticalOffset={windowY}>
+      <NativeView
+        ref={contentRef}
+        style={styles.container}
+        onLayout={() => contentRef.current?.measureInWindow((_x, y) => setWindowY(y))}>
+        <View style={styles.inputRow}>
+          <TextInput
+            style={[styles.input, { color: textColor }]}
+            placeholder="What needs doing?"
+            placeholderTextColor="#999"
+            value={draft}
+            onChangeText={setDraft}
+            onSubmitEditing={addTodo}
+            returnKeyType="done"
+          />
+          <Pressable
+            style={[styles.addButton, { backgroundColor: Colors.light.tint }]}
+            onPress={addTodo}
+            accessibilityRole="button">
+            <Text style={styles.addButtonText}>Add</Text>
           </Pressable>
         </View>
-      )}
-    </View>
+        <View style={styles.filters}>
+          {FILTER_NAMES.map((name) => {
+            const selected = name === filter;
+            return (
+              <Pressable
+                key={name}
+                style={[
+                  styles.filterButton,
+                  selected && { backgroundColor: Colors.light.tint },
+                ]}
+                onPress={() => setFilter(name)}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}>
+                <Text style={selected && styles.filterSelectedText}>{name}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <FlatList
+          data={visibleTodos}
+          keyboardShouldPersistTaps="handled"
+          keyExtractor={(t) => t.id}
+          ListEmptyComponent={
+            <Text style={styles.empty}>
+              {todos.length ? `No ${filter.toLowerCase()} to-dos.` : 'Nothing to do yet.'}
+            </Text>
+          }
+          renderItem={({ item }) =>
+            item.id === editingId ? (
+              <View style={styles.row}>
+                <TextInput
+                  style={[styles.input, { color: textColor }]}
+                  value={editDraft}
+                  onChangeText={setEditDraft}
+                  onSubmitEditing={saveEdit}
+                  returnKeyType="done"
+                  autoFocus
+                  accessibilityLabel={`Edit ${item.title}`}
+                />
+                <View style={styles.editActions}>
+                  <Pressable onPress={saveEdit} accessibilityRole="button" hitSlop={8}>
+                    <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Save</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setEditingId(null)} accessibilityRole="button" hitSlop={8}>
+                    <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Cancel</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+            <View style={styles.row}>
+              <View style={styles.rowMain}>
+                <Pressable
+                  onPress={() => toggleTodo(item.id)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: item.done }}
+                  accessibilityLabel={item.title}
+                  hitSlop={8}>
+                  <Text style={styles.check}>{item.done ? '☑' : '☐'}</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.titlePress}
+                  onPress={() => startEditing(item)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${item.title}`}>
+                  <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
+                </Pressable>
+              </View>
+              <Pressable
+                onPress={() => deleteTodo(item.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${item.title}`}
+                hitSlop={8}>
+                <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Delete</Text>
+              </Pressable>
+            </View>
+            )
+          }
+        />
+        {todos.length > 0 && (
+          <View style={styles.footer}>
+            <Text>{`${remaining} ${remaining === 1 ? 'item' : 'items'} left`}</Text>
+            {remaining < todos.length && (
+              <Pressable onPress={clearCompleted} accessibilityRole="button" hitSlop={8}>
+                <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Clear completed</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+        {lastDeleted && (
+          <View style={styles.undoBar}>
+            <Text>To-do deleted.</Text>
+            <Pressable onPress={undoDelete} accessibilityRole="button" hitSlop={8}>
+              <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Undo</Text>
+            </Pressable>
+          </View>
+        )}
+      </NativeView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   container: {
     flex: 1,
     padding: 16,
