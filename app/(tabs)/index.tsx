@@ -16,6 +16,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 
 const STORAGE_KEY = 'todos';
 const UNDO_MS = 5000;
+const MAX_TITLE = 60;
 
 type Todo = { id: string; title: string; done: boolean };
 
@@ -39,7 +40,18 @@ const UNDO_MESSAGES: Record<UndoAction, string> = {
   clear: 'Completed to-dos cleared.',
 };
 
+type Field = 'add' | 'edit';
+
+type FieldMessageKind = 'duplicate' | 'tooLong';
+
+const FIELD_MESSAGES: Record<FieldMessageKind, string> = {
+  duplicate: 'Already on the list.',
+  tooLong: `Keep it to ${MAX_TITLE} characters.`,
+};
+
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+const codePointLength = (s: string) => [...s].length;
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -50,6 +62,16 @@ function withUniqueIds(list: Todo[]): Todo[] {
     seen.add(todo.id);
     return todo;
   });
+}
+
+function validateTitle(
+  title: string,
+  todos: Todo[],
+  editingId: string | null = null
+): FieldMessageKind | null {
+  if (codePointLength(title) > MAX_TITLE) return 'tooLong';
+  if (todos.some((t) => t.id !== editingId && sameTitle(t.title, title))) return 'duplicate';
+  return null;
 }
 
 function removeWhere(
@@ -109,7 +131,10 @@ export default function TodoScreen() {
   const [editDraft, setEditDraft] = useState('');
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
-  const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
+  const [fieldMessage, setFieldMessage] = useState<{
+    field: Field;
+    kind: FieldMessageKind;
+  } | null>(null);
   const [undo, setUndo] = useState<{ action: UndoAction; removed: Removal } | null>(null);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
@@ -143,25 +168,30 @@ export default function TodoScreen() {
     return () => clearTimeout(timer);
   }, [undo]);
 
-  function clearDuplicate(source: 'add' | 'edit') {
-    setDuplicateIn((current) => (current === source ? null : current));
+  function clearFieldMessage(field: Field) {
+    setFieldMessage((current) => (current?.field === field ? null : current));
+  }
+
+  function messageFor(field: Field) {
+    return fieldMessage?.field === field ? FIELD_MESSAGES[fieldMessage.kind] : null;
   }
 
   function changeDraft(text: string) {
     setDraft(text);
-    clearDuplicate('add');
+    clearFieldMessage('add');
   }
 
   function changeEditDraft(text: string) {
     setEditDraft(text);
-    clearDuplicate('edit');
+    clearFieldMessage('edit');
   }
 
   function addTodo() {
     const title = draft.trim();
     if (!title) return;
-    if (todos.some((t) => sameTitle(t.title, title))) {
-      setDuplicateIn('add');
+    const kind = validateTitle(title, todos);
+    if (kind) {
+      setFieldMessage({ field: 'add', kind });
       return;
     }
     setTodos((current) => [...current, { id: newId(), title, done: false }]);
@@ -186,22 +216,23 @@ export default function TodoScreen() {
   function startEditing(todo: Todo) {
     setEditingId(todo.id);
     setEditDraft(todo.title);
-    clearDuplicate('edit');
+    clearFieldMessage('edit');
   }
 
   function cancelEdit() {
     setEditingId(null);
-    clearDuplicate('edit');
+    clearFieldMessage('edit');
   }
 
   function saveEdit() {
     const title = editDraft.trim();
-    if (todos.some((t) => t.id !== editingId && sameTitle(t.title, title))) {
-      setDuplicateIn('edit');
-      return;
-    }
     // An empty save keeps the old text rather than blanking the to-do.
     if (title) {
+      const kind = validateTitle(title, todos, editingId);
+      if (kind) {
+        setFieldMessage({ field: 'edit', kind });
+        return;
+      }
       setTodos((current) => current.map((t) => (t.id === editingId ? { ...t, title } : t)));
     }
     cancelEdit();
@@ -260,7 +291,7 @@ export default function TodoScreen() {
               <Text style={styles.addButtonText}>Add</Text>
             </Pressable>
           </View>
-          {duplicateIn === 'add' && <Text style={styles.duplicate}>Already on the list.</Text>}
+          {messageFor('add') && <Text style={styles.fieldMessage}>{messageFor('add')}</Text>}
         </View>
         <TextInput
           style={[styles.input, styles.search, { color: textColor }]}
@@ -325,7 +356,7 @@ export default function TodoScreen() {
                     </Pressable>
                   </View>
                 </View>
-                {duplicateIn === 'edit' && <Text style={styles.duplicate}>Already on the list.</Text>}
+                {messageFor('edit') && <Text style={styles.fieldMessage}>{messageFor('edit')}</Text>}
               </View>
             ) : (
             <View style={styles.row}>
@@ -423,7 +454,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  duplicate: {
+  fieldMessage: {
     color: '#c0392b',
     marginTop: 6,
   },

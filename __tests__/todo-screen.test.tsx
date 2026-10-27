@@ -514,3 +514,96 @@ test('a to-do can change its own title to a different case', async () => {
   expect(screen.getByText('BUY MILK')).toBeOnTheScreen();
   expect(screen.queryByLabelText(/^Edit Buy milk$/)).toBeNull();
 });
+
+const TOO_LONG = 'Keep it to 60 characters.';
+
+test('refuses an add over 60 characters, keeps the text, and adds nothing', async () => {
+  await renderWithThree();
+  const long = 'x'.repeat(61);
+
+  addTodo(long);
+
+  expect(screen.getByText(TOO_LONG)).toBeOnTheScreen();
+  expect(screen.getByPlaceholderText('What needs doing?').props.value).toBe(long);
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toHaveLength(3);
+});
+
+test('allows exactly 60 characters, counting after trimming and an emoji as one', async () => {
+  await renderWithThree();
+
+  addTodo(`  ${'x'.repeat(60)}  `);
+  expect(screen.queryByText(TOO_LONG)).toBeNull();
+  expect(screen.getByRole('checkbox', { name: 'x'.repeat(60) })).toBeOnTheScreen();
+
+  addTodo('😀'.repeat(60));
+  expect(screen.queryByText(TOO_LONG)).toBeNull();
+  expect(screen.getByRole('checkbox', { name: '😀'.repeat(60) })).toBeOnTheScreen();
+
+  addTodo('😀'.repeat(61));
+  expect(screen.getByText(TOO_LONG)).toBeOnTheScreen();
+});
+
+test('refuses an edit over 60 characters, keeps the old title, and stays in editing', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'x'.repeat(61));
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(screen.getByText(TOO_LONG)).toBeOnTheScreen();
+  expect(screen.getByLabelText('Edit Buy bread').props.value).toBe('x'.repeat(61));
+  expect(screen.getByRole('button', { name: 'Save' })).toBeOnTheScreen();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([{ title: 'Buy milk' }, { title: 'Buy bread' }, { title: 'Buy eggs' }]);
+
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'x'.repeat(60));
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  expect(screen.getByText('x'.repeat(60))).toBeOnTheScreen();
+});
+
+test('the length message clears when the field text changes, and on edit cancel', async () => {
+  await renderWithThree();
+
+  addTodo('x'.repeat(61));
+  fireEvent.changeText(screen.getByPlaceholderText('What needs doing?'), 'x'.repeat(60));
+  expect(screen.queryByText(TOO_LONG)).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'x'.repeat(61));
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'x'.repeat(60));
+  expect(screen.queryByText(TOO_LONG)).toBeNull();
+
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'x'.repeat(61));
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.queryByText(TOO_LONG)).toBeNull();
+});
+
+test('a length refusal after a duplicate refusal shows only the length message', async () => {
+  await renderWithThree();
+
+  addTodo('buy milk');
+  expect(screen.getByText('Already on the list.')).toBeOnTheScreen();
+
+  addTodo('x'.repeat(61));
+  expect(screen.getByText(TOO_LONG)).toBeOnTheScreen();
+  expect(screen.queryByText('Already on the list.')).toBeNull();
+});
+
+test('a refusal in one field replaces the other field message', async () => {
+  await renderWithThree();
+
+  addTodo('buy milk');
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'x'.repeat(61));
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  expect(screen.getByText(TOO_LONG)).toBeOnTheScreen();
+  expect(screen.queryByText('Already on the list.')).toBeNull();
+
+  addTodo('buy milk');
+  expect(screen.getByText('Already on the list.')).toBeOnTheScreen();
+  expect(screen.queryByText(TOO_LONG)).toBeNull();
+});
