@@ -252,3 +252,165 @@ test('clearing completed to-dos dismisses the undo offer', async () => {
 
   expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
 });
+
+async function savedTitles() {
+  const saved: { title: string; done: boolean }[] = JSON.parse(
+    (await AsyncStorage.getItem('todos')) ?? '[]'
+  );
+  return saved.map((t) => t.title);
+}
+
+function search(text: string) {
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), text);
+}
+
+test('search shows only matching titles, ignoring case and outer spaces', async () => {
+  await renderWithThree();
+
+  search('  BREAD ');
+
+  expect(screen.getByText('Buy bread')).toBeOnTheScreen();
+  expect(screen.queryByText('Buy milk')).toBeNull();
+  expect(screen.queryByText('Buy eggs')).toBeNull();
+  expect(screen.getByText('3 items left')).toBeOnTheScreen();
+
+  search('');
+  expect(screen.getAllByRole('checkbox')).toHaveLength(3);
+});
+
+test('search combines with the filter and says when nothing matches', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+
+  search('buy');
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.getByText('Buy milk')).toBeOnTheScreen();
+  expect(screen.queryByText('Buy bread')).toBeNull();
+
+  search('bread');
+  expect(screen.getByText('No matching to-dos.')).toBeOnTheScreen();
+
+  search('zebra');
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  expect(screen.getByText('No matching to-dos.')).toBeOnTheScreen();
+  expect(screen.getByText('2 items left')).toBeOnTheScreen();
+});
+
+test('search text is not saved between launches', async () => {
+  await renderWithThree();
+  search('milk');
+  screen.unmount();
+
+  render(<TodoScreen />);
+  await screen.findByText('Buy eggs');
+  expect(screen.getByPlaceholderText('Search to-dos')).toHaveDisplayValue('');
+  expect(screen.getAllByRole('checkbox')).toHaveLength(3);
+});
+
+test('moves a to-do up and down and saves the new order', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Move Buy eggs up' }));
+  expect(screen.getAllByRole('checkbox').map((c) => c.props.accessibilityLabel)).toEqual([
+    'Buy milk',
+    'Buy eggs',
+    'Buy bread',
+  ]);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Move Buy milk down' }));
+  expect(screen.getAllByRole('checkbox').map((c) => c.props.accessibilityLabel)).toEqual([
+    'Buy eggs',
+    'Buy milk',
+    'Buy bread',
+  ]);
+  expect(await savedTitles()).toEqual(['Buy eggs', 'Buy milk', 'Buy bread']);
+});
+
+test('the ends of the list cannot move further', async () => {
+  await renderWithThree();
+
+  const topUp = screen.getByRole('button', { name: 'Move Buy milk up' });
+  const bottomDown = screen.getByRole('button', { name: 'Move Buy eggs down' });
+  expect(topUp).toBeDisabled();
+  expect(bottomDown).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Move Buy milk down' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Move Buy eggs up' })).toBeEnabled();
+
+  fireEvent.press(topUp);
+  fireEvent.press(bottomDown);
+  expect(await savedTitles()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+});
+
+test('move buttons hide while a filter or search narrows the list', async () => {
+  await renderWithThree();
+  expect(screen.getAllByRole('button', { name: /^Move / })).toHaveLength(6);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.queryAllByRole('button', { name: /^Move / })).toHaveLength(0);
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  search('milk');
+  expect(screen.queryAllByRole('button', { name: /^Move / })).toHaveLength(0);
+
+  search('');
+  expect(screen.getAllByRole('button', { name: /^Move / })).toHaveLength(6);
+});
+
+test('marks every to-do done, then every to-do not done, saving each', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  expect(screen.queryByRole('button', { name: /^Mark all/ })).toBeNull();
+  addTodo('Buy milk');
+  addTodo('Buy bread');
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  expect(screen.getByRole('checkbox', { name: 'Buy milk' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy bread' })).toBeChecked();
+  expect(screen.queryByRole('button', { name: 'Mark all done' })).toBeNull();
+  let saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([{ done: true }, { done: true }]);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all not done' }));
+  expect(screen.getByRole('checkbox', { name: 'Buy milk' })).not.toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy bread' })).not.toBeChecked();
+  expect(screen.getByRole('button', { name: 'Mark all done' })).toBeOnTheScreen();
+  saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([{ done: false }, { done: false }]);
+});
+
+test('will not add a title already on the list', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('Buy milk');
+
+  addTodo('  buy MILK ');
+
+  expect(screen.getAllByRole('checkbox')).toHaveLength(1);
+  expect(screen.getByPlaceholderText('What needs doing?')).toHaveDisplayValue('  buy MILK ');
+  expect(screen.getByText('Already on the list.')).toBeOnTheScreen();
+  expect(await savedTitles()).toEqual(['Buy milk']);
+
+  fireEvent.changeText(screen.getByPlaceholderText('What needs doing?'), 'Buy bread');
+  expect(screen.queryByText('Already on the list.')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Add' }));
+  expect(screen.getAllByRole('checkbox')).toHaveLength(2);
+});
+
+test('will not save an edit that duplicates another to-do', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'BUY EGGS');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(screen.getByLabelText('Edit Buy bread')).toHaveDisplayValue('BUY EGGS');
+  expect(screen.getByText('Already on the list.')).toBeOnTheScreen();
+  expect(await savedTitles()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'Buy BREAD');
+  expect(screen.queryByText('Already on the list.')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  expect(screen.getByText('Buy BREAD')).toBeOnTheScreen();
+  expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+});
