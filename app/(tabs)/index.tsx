@@ -42,6 +42,8 @@ export default function TodoScreen() {
     if (loaded) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   }, [todos, loaded]);
 
+  const remaining = todos.filter((t) => !t.done).length;
+
   function addTodo() {
     const title = draft.trim();
     if (!title) return;
@@ -146,6 +148,11 @@ export default function TodoScreen() {
           )
         }
       />
+      {todos.length > 0 && (
+        <View style={styles.footer}>
+          <Text>{`${remaining} ${remaining === 1 ? 'item' : 'items'} left`}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -183,6 +190,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 32,
     opacity: 0.6,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 12,
   },
   row: {
     flexDirection: 'row',
