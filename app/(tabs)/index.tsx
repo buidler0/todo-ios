@@ -15,6 +15,7 @@ import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 
 const STORAGE_KEY = 'todos';
+const FILTER_KEY = 'filter';
 const UNDO_MS = 5000;
 
 type Todo = { id: string; title: string; done: boolean; pinned: boolean };
@@ -31,6 +32,8 @@ const FILTERS: Record<Filter, (t: Todo) => boolean> = {
   Done: (t) => t.done,
 };
 const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
+const isFilter = (value: string | null): value is Filter =>
+  FILTER_NAMES.some((name) => name === value);
 
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
@@ -102,7 +105,8 @@ export default function TodoScreen() {
   const [windowY, setWindowY] = useState(0);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((saved) => {
+    AsyncStorage.multiGet([STORAGE_KEY, FILTER_KEY]).then(([[, saved], [, savedFilter]]) => {
+      if (isFilter(savedFilter)) setFilter(savedFilter);
       if (saved) {
         const stored: (Omit<Todo, 'pinned'> & { pinned?: boolean })[] = JSON.parse(saved);
         setTodos(withUniqueIds(stored.map((t) => ({ ...t, pinned: t.pinned === true }))));
@@ -129,6 +133,11 @@ export default function TodoScreen() {
     const timer = setTimeout(() => setUndo(null), UNDO_MS);
     return () => clearTimeout(timer);
   }, [undo]);
+
+  function selectFilter(name: Filter) {
+    setFilter(name);
+    AsyncStorage.setItem(FILTER_KEY, name);
+  }
 
   function clearDuplicate(source: 'add' | 'edit') {
     setDuplicateIn((current) => (current === source ? null : current));
@@ -285,9 +294,10 @@ export default function TodoScreen() {
                   styles.filterButton,
                   selected && { backgroundColor: Colors.light.tint },
                 ]}
-                onPress={() => setFilter(name)}
+                onPress={() => selectFilter(name)}
+                disabled={!loaded}
                 accessibilityRole="button"
-                accessibilityState={{ selected }}>
+                accessibilityState={{ selected, disabled: !loaded }}>
                 <Text style={selected && styles.filterSelectedText}>{name}</Text>
               </Pressable>
             );
