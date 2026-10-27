@@ -31,7 +31,7 @@ test('adds a to-do and ticks it done', async () => {
   expect(screen.getByText('Buy milk')).toHaveStyle({ textDecorationLine: 'line-through' });
 });
 
-test('edits a to-do, ignoring cancel and empty saves', async () => {
+test('edits a to-do, ignoring cancel', async () => {
   render(<TodoScreen />);
   await screen.findByText('Nothing to do yet.');
 
@@ -41,11 +41,6 @@ test('edits a to-do, ignoring cancel and empty saves', async () => {
   fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
   fireEvent.changeText(screen.getByLabelText('Edit Buy milk'), 'Buy bread');
   fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
-  expect(screen.getByText('Buy milk')).toBeOnTheScreen();
-
-  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
-  fireEvent.changeText(screen.getByLabelText('Edit Buy milk'), '   ');
-  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
   expect(screen.getByText('Buy milk')).toBeOnTheScreen();
 
   fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
@@ -725,4 +720,39 @@ test('the filter buttons are disabled until the saved data has loaded', async ()
     expect(screen.getByRole('button', { name })).toBeEnabled();
   }
   expect(screen.getByRole('button', { name: 'Done' })).toBeSelected();
+});
+
+test('saving an edit empty deletes the to-do and offers Undo', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), '   ');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy eggs']);
+  expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+  expect(screen.getByText('To-do deleted.')).toBeOnTheScreen();
+  let saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toHaveLength(2);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+  expect(checkedStates()).toEqual([false, true, false]);
+  saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([{ title: 'Buy milk' }, { title: 'Buy bread' }, { title: 'Buy eggs' }]);
+});
+
+test('saving an empty edit of the only to-do leaves an empty list with Undo', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('Buy milk');
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy milk'), '');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(screen.getByText('Nothing to do yet.')).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
 });
