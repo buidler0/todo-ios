@@ -353,3 +353,30 @@ test('moving is only offered on the unfiltered, unsearched list', async () => {
   fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), '  ');
   expect(screen.getByRole('button', { name: 'Move Buy bread up' })).toBeOnTheScreen();
 });
+
+test('marks every to-do done, then every to-do not done', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  expect(screen.queryByRole('button', { name: 'Mark all not done' })).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  for (const box of screen.getAllByRole('checkbox')) expect(box).toBeChecked();
+  expect(screen.getByText('0 items left')).toBeOnTheScreen();
+  expect(screen.queryByRole('button', { name: 'Mark all done' })).toBeNull();
+  let saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved.map((t: { done: boolean }) => t.done)).toEqual([true, true, true]);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all not done' }));
+  for (const box of screen.getAllByRole('checkbox')) expect(box).not.toBeChecked();
+  expect(screen.getByText('3 items left')).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Mark all done' })).toBeOnTheScreen();
+  saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved.map((t: { done: boolean }) => t.done)).toEqual([false, false, false]);
+});
+
+test('offers no mark-all button on an empty list', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+
+  expect(screen.queryByRole('button', { name: /^Mark all/ })).toBeNull();
+});
