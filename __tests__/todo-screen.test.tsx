@@ -242,15 +242,98 @@ test('only the latest delete can be undone', async () => {
   expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
 });
 
-test('clearing completed to-dos dismisses the undo offer', async () => {
+test('clearing completed to-dos replaces the undo offer for a delete', async () => {
   await renderWithThree();
   fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
   fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
-  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+  expect(screen.getByText('To-do deleted.')).toBeOnTheScreen();
 
   fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+  expect(screen.getByText('Completed to-dos cleared.')).toBeOnTheScreen();
+  expect(screen.queryByText('To-do deleted.')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
 
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy eggs']);
+  expect(screen.getByRole('checkbox', { name: 'Buy bread' })).toBeChecked();
   expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+const MIXED = [
+  { title: 'Buy milk', done: true },
+  { title: 'Buy bread' },
+  { title: 'Buy eggs', done: true },
+  { title: 'Buy rice' },
+  { title: 'Buy tea', done: true },
+];
+
+test('undoes a clear, putting every cleared to-do back where it was', async () => {
+  await renderSaved(MIXED);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy rice']);
+  expect(screen.getByText('Completed to-dos cleared.')).toBeOnTheScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs', 'Buy rice', 'Buy tea']);
+  expect(screen.getAllByRole('checkbox').map((box) => box.props.accessibilityState.checked)).toEqual(
+    [true, false, true, false, true]
+  );
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([
+    { title: 'Buy milk', done: true },
+    { title: 'Buy bread', done: false },
+    { title: 'Buy eggs', done: true },
+    { title: 'Buy rice', done: false },
+    { title: 'Buy tea', done: true },
+  ]);
+});
+
+test('the undo offer for a clear expires after 5 seconds, restarting on a later delete', async () => {
+  await renderSaved(MIXED);
+  jest.useFakeTimers();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+  act(() => jest.advanceTimersByTime(4999));
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+  act(() => jest.advanceTimersByTime(1));
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy bread' }));
+  act(() => jest.advanceTimersByTime(4000));
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy rice' }));
+  act(() => jest.advanceTimersByTime(4000));
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+  act(() => jest.advanceTimersByTime(1000));
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('a delete after a clear replaces its undo offer', async () => {
+  await renderSaved(MIXED);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy bread' }));
+  expect(screen.getByText('To-do deleted.')).toBeOnTheScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy rice']);
+});
+
+test('after a delete then a clear, undo restores only the clear', async () => {
+  await renderSaved(MIXED);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy rice' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs', 'Buy tea']);
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved.map((t: { title: string }) => t.title)).toEqual([
+    'Buy milk',
+    'Buy bread',
+    'Buy eggs',
+    'Buy tea',
+  ]);
 });
 
 test('searches by title, ignoring case and outer spaces, within the filter', async () => {

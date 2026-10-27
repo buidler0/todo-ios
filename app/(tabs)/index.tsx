@@ -21,6 +21,13 @@ type Todo = { id: string; title: string; done: boolean };
 
 type Filter = 'All' | 'Active' | 'Done';
 
+type Removal = { kind: 'delete' | 'clear'; entries: { todo: Todo; index: number }[] };
+
+const REMOVAL_MESSAGES: Record<Removal['kind'], string> = {
+  delete: 'To-do deleted.',
+  clear: 'Completed to-dos cleared.',
+};
+
 const FILTERS: Record<Filter, (t: Todo) => boolean> = {
   All: () => true,
   Active: (t) => !t.done,
@@ -31,6 +38,11 @@ const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+function removeWhere(list: Todo[], remove: (t: Todo) => boolean) {
+  const entries = list.flatMap((todo, index) => (remove(todo) ? [{ todo, index }] : []));
+  return { kept: list.filter((t) => !remove(t)), entries };
+}
 
 function withUniqueIds(list: Todo[]): Todo[] {
   const seen = new Set<string>();
@@ -76,7 +88,7 @@ export default function TodoScreen() {
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
-  const [lastDeleted, setLastDeleted] = useState<{ todo: Todo; index: number } | null>(null);
+  const [lastRemoved, setLastRemoved] = useState<Removal | null>(null);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
   const backgroundColor = useThemeColor({}, 'background');
@@ -104,10 +116,10 @@ export default function TodoScreen() {
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
-    if (!lastDeleted) return;
-    const timer = setTimeout(() => setLastDeleted(null), UNDO_MS);
+    if (!lastRemoved) return;
+    const timer = setTimeout(() => setLastRemoved(null), UNDO_MS);
     return () => clearTimeout(timer);
-  }, [lastDeleted]);
+  }, [lastRemoved]);
 
   function clearDuplicate(source: 'add' | 'edit') {
     setDuplicateIn((current) => (current === source ? null : current));
@@ -184,21 +196,26 @@ export default function TodoScreen() {
   }
 
   function clearCompleted() {
-    setTodos((current) => current.filter((t) => !t.done));
-    setLastDeleted(null);
+    const { kept, entries } = removeWhere(todos, (t) => t.done);
+    setLastRemoved({ kind: 'clear', entries });
+    setTodos(kept);
   }
 
   function deleteTodo(id: string) {
-    const index = todos.findIndex((t) => t.id === id);
-    setLastDeleted({ todo: todos[index], index });
-    setTodos(todos.filter((t) => t.id !== id));
+    const { kept, entries } = removeWhere(todos, (t) => t.id === id);
+    setLastRemoved({ kind: 'delete', entries });
+    setTodos(kept);
   }
 
-  function undoDelete() {
-    if (!lastDeleted) return;
-    const { todo, index } = lastDeleted;
-    setTodos((current) => [...current.slice(0, index), todo, ...current.slice(index)]);
-    setLastDeleted(null);
+  function undoRemoval() {
+    if (!lastRemoved) return;
+    const { entries } = lastRemoved;
+    setTodos((current) => {
+      const next = [...current];
+      for (const { todo, index } of entries) next.splice(index, 0, todo);
+      return next;
+    });
+    setLastRemoved(null);
   }
 
   return (
@@ -376,10 +393,10 @@ export default function TodoScreen() {
             </View>
           </View>
         )}
-        {lastDeleted && (
+        {lastRemoved && (
           <View style={styles.undoBar}>
-            <Text>To-do deleted.</Text>
-            <Pressable onPress={undoDelete} accessibilityRole="button" hitSlop={8}>
+            <Text>{REMOVAL_MESSAGES[lastRemoved.kind]}</Text>
+            <Pressable onPress={undoRemoval} accessibilityRole="button" hitSlop={8}>
               <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Undo</Text>
             </Pressable>
           </View>
