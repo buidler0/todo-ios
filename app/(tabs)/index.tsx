@@ -28,6 +28,17 @@ const FILTERS: Record<Filter, (t: Todo) => boolean> = {
 };
 const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
 
+type Removed = { todo: Todo; index: number };
+
+type Removal = readonly [Removed, ...Removed[]];
+
+type UndoAction = 'delete' | 'clear';
+
+const UNDO_MESSAGES: Record<UndoAction, string> = {
+  delete: 'To-do deleted.',
+  clear: 'Completed to-dos cleared.',
+};
+
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -39,6 +50,29 @@ function withUniqueIds(list: Todo[]): Todo[] {
     seen.add(todo.id);
     return todo;
   });
+}
+
+function removeWhere(
+  list: Todo[],
+  matches: (t: Todo) => boolean
+): { kept: Todo[]; removed: Removal | null } {
+  const kept: Todo[] = [];
+  const log: Removed[] = [];
+  list.forEach((todo, index) => {
+    if (matches(todo)) log.push({ todo, index });
+    else kept.push(todo);
+  });
+  const [first, ...rest] = log;
+  return { kept, removed: first ? [first, ...rest] : null };
+}
+
+function restore(list: Todo[], removal: Removal): Todo[] {
+  const present = new Set(list.map((t) => t.id));
+  const next = [...list];
+  for (const { todo, index } of removal) {
+    if (!present.has(todo.id)) next.splice(Math.min(index, next.length), 0, todo);
+  }
+  return next;
 }
 
 function MoveButton({
@@ -76,7 +110,7 @@ export default function TodoScreen() {
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
-  const [lastDeleted, setLastDeleted] = useState<{ todo: Todo; index: number } | null>(null);
+  const [undo, setUndo] = useState<{ action: UndoAction; removed: Removal } | null>(null);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
   const backgroundColor = useThemeColor({}, 'background');
@@ -104,10 +138,10 @@ export default function TodoScreen() {
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
-    if (!lastDeleted) return;
-    const timer = setTimeout(() => setLastDeleted(null), UNDO_MS);
+    if (!undo) return;
+    const timer = setTimeout(() => setUndo(null), UNDO_MS);
     return () => clearTimeout(timer);
-  }, [lastDeleted]);
+  }, [undo]);
 
   function clearDuplicate(source: 'add' | 'edit') {
     setDuplicateIn((current) => (current === source ? null : current));
@@ -177,22 +211,25 @@ export default function TodoScreen() {
     setTodos((current) => current.map((t) => ({ ...t, done })));
   }
 
+  function removeAndOffer(action: UndoAction, matches: (t: Todo) => boolean) {
+    const { kept, removed } = removeWhere(todos, matches);
+    if (!removed) return;
+    setTodos(kept);
+    setUndo({ action, removed });
+  }
+
   function clearCompleted() {
-    setTodos((current) => current.filter((t) => !t.done));
-    setLastDeleted(null);
+    removeAndOffer('clear', (t) => t.done);
   }
 
   function deleteTodo(id: string) {
-    const index = todos.findIndex((t) => t.id === id);
-    setLastDeleted({ todo: todos[index], index });
-    setTodos(todos.filter((t) => t.id !== id));
+    removeAndOffer('delete', (t) => t.id === id);
   }
 
-  function undoDelete() {
-    if (!lastDeleted) return;
-    const { todo, index } = lastDeleted;
-    setTodos((current) => [...current.slice(0, index), todo, ...current.slice(index)]);
-    setLastDeleted(null);
+  function undoLast() {
+    if (!undo) return;
+    setTodos((current) => restore(current, undo.removed));
+    setUndo(null);
   }
 
   return (
@@ -358,10 +395,10 @@ export default function TodoScreen() {
             </View>
           </View>
         )}
-        {lastDeleted && (
+        {undo && (
           <View style={styles.undoBar}>
-            <Text>To-do deleted.</Text>
-            <Pressable onPress={undoDelete} accessibilityRole="button" hitSlop={8}>
+            <Text>{UNDO_MESSAGES[undo.action]}</Text>
+            <Pressable onPress={undoLast} accessibilityRole="button" hitSlop={8}>
               <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Undo</Text>
             </Pressable>
           </View>
