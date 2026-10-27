@@ -149,6 +149,12 @@ export default function TodoScreen() {
     });
   }
 
+  function sortTodos() {
+    setTodos((current) =>
+      [...current].sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()))
+    );
+  }
+
   function startEditing(todo: Todo) {
     setEditingId(todo.id);
     setEditDraft(todo.title);
@@ -252,6 +258,15 @@ export default function TodoScreen() {
               </Pressable>
             );
           })}
+          {canReorder && todos.length >= 2 && (
+            <Pressable
+              style={styles.sortButton}
+              onPress={sortTodos}
+              accessibilityRole="button"
+              hitSlop={8}>
+              <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Sort A to Z</Text>
+            </Pressable>
+          )}
         </View>
         <FlatList
           data={visibleTodos}
@@ -429,6 +444,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
+  },
+  sortButton: {
+    marginLeft: 'auto',
+    alignSelf: 'center',
   },
   filterSelectedText: {
     color: '#fff',
