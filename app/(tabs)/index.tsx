@@ -28,6 +28,8 @@ const FILTERS: Record<Filter, (t: Todo) => boolean> = {
 };
 const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
 
+const DUPLICATE_MESSAGE = 'Already on the list.';
+
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 function withUniqueIds(list: Todo[]): Todo[] {
@@ -47,6 +49,9 @@ export default function TodoScreen() {
   const [editDraft, setEditDraft] = useState('');
   const [filter, setFilter] = useState<Filter>('All');
   const [lastDeleted, setLastDeleted] = useState<{ todo: Todo; index: number } | null>(null);
+  const [search, setSearch] = useState('');
+  const [addDuplicate, setAddDuplicate] = useState(false);
+  const [editDuplicate, setEditDuplicate] = useState(false);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
   const backgroundColor = useThemeColor({}, 'background');
@@ -65,8 +70,18 @@ export default function TodoScreen() {
     if (loaded) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   }, [todos, loaded]);
 
-  const visibleTodos = todos.filter(FILTERS[filter]);
+  const query = search.trim().toLowerCase();
+  const visibleTodos = todos.filter(
+    (t) => FILTERS[filter](t) && t.title.toLowerCase().includes(query)
+  );
   const remaining = todos.filter((t) => !t.done).length;
+  // Moving swaps neighbours in the full list, which only matches what's on screen when nothing is hidden.
+  const canMove = filter === 'All' && !query;
+
+  function isDuplicate(title: string, exceptId?: string) {
+    const key = title.toLowerCase();
+    return todos.some((t) => t.id !== exceptId && t.title.toLowerCase() === key);
+  }
 
   useEffect(() => {
     if (!lastDeleted) return;
@@ -77,8 +92,17 @@ export default function TodoScreen() {
   function addTodo() {
     const title = draft.trim();
     if (!title) return;
+    if (isDuplicate(title)) {
+      setAddDuplicate(true);
+      return;
+    }
     setTodos((current) => [...current, { id: newId(), title, done: false }]);
     setDraft('');
+  }
+
+  function changeDraft(text: string) {
+    setDraft(text);
+    setAddDuplicate(false);
   }
 
   function toggleTodo(id: string) {
@@ -88,15 +112,40 @@ export default function TodoScreen() {
   function startEditing(todo: Todo) {
     setEditingId(todo.id);
     setEditDraft(todo.title);
+    setEditDuplicate(false);
+  }
+
+  function changeEditDraft(text: string) {
+    setEditDraft(text);
+    setEditDuplicate(false);
   }
 
   function saveEdit() {
     const title = editDraft.trim();
+    if (title && isDuplicate(title, editingId ?? undefined)) {
+      setEditDuplicate(true);
+      return;
+    }
     // An empty save keeps the old text rather than blanking the to-do.
     if (title) {
       setTodos((current) => current.map((t) => (t.id === editingId ? { ...t, title } : t)));
     }
     setEditingId(null);
+  }
+
+  function moveTodo(id: string, offset: -1 | 1) {
+    setTodos((current) => {
+      const from = current.findIndex((t) => t.id === id);
+      const to = from + offset;
+      if (from < 0 || to < 0 || to >= current.length) return current;
+      const next = [...current];
+      [next[from], next[to]] = [next[to], next[from]];
+      return next;
+    });
+  }
+
+  function markAll(done: boolean) {
+    setTodos((current) => current.map((t) => ({ ...t, done })));
   }
 
   function clearCompleted() {
@@ -133,7 +182,7 @@ export default function TodoScreen() {
             placeholder="What needs doing?"
             placeholderTextColor="#999"
             value={draft}
-            onChangeText={setDraft}
+            onChangeText={changeDraft}
             onSubmitEditing={addTodo}
             returnKeyType="done"
           />
@@ -144,6 +193,16 @@ export default function TodoScreen() {
             <Text style={styles.addButtonText}>Add</Text>
           </Pressable>
         </View>
+        {addDuplicate && <Text style={styles.error}>{DUPLICATE_MESSAGE}</Text>}
+        <TextInput
+          style={[styles.input, styles.search, { color: textColor }]}
+          placeholder="Search to-dos"
+          placeholderTextColor="#999"
+          value={search}
+          onChangeText={setSearch}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+        />
         <View style={styles.filters}>
           {FILTER_NAMES.map((name) => {
             const selected = name === filter;
@@ -168,29 +227,38 @@ export default function TodoScreen() {
           keyExtractor={(t) => t.id}
           ListEmptyComponent={
             <Text style={styles.empty}>
-              {todos.length ? `No ${filter.toLowerCase()} to-dos.` : 'Nothing to do yet.'}
+              {!todos.length
+                ? 'Nothing to do yet.'
+                : query
+                  ? 'No matching to-dos.'
+                  : `No ${filter.toLowerCase()} to-dos.`}
             </Text>
           }
-          renderItem={({ item }) =>
+          renderItem={({ item, index }) =>
             item.id === editingId ? (
-              <View style={styles.row}>
-                <TextInput
-                  style={[styles.input, { color: textColor }]}
-                  value={editDraft}
-                  onChangeText={setEditDraft}
-                  onSubmitEditing={saveEdit}
-                  returnKeyType="done"
-                  autoFocus
-                  accessibilityLabel={`Edit ${item.title}`}
-                />
-                <View style={styles.editActions}>
-                  <Pressable onPress={saveEdit} accessibilityRole="button" hitSlop={8}>
-                    <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Save</Text>
-                  </Pressable>
-                  <Pressable onPress={() => setEditingId(null)} accessibilityRole="button" hitSlop={8}>
-                    <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Cancel</Text>
-                  </Pressable>
+              <View style={styles.editRow}>
+                <View style={styles.editFields}>
+                  <TextInput
+                    style={[styles.input, { color: textColor }]}
+                    value={editDraft}
+                    onChangeText={changeEditDraft}
+                    onSubmitEditing={saveEdit}
+                    returnKeyType="done"
+                    autoFocus
+                    accessibilityLabel={`Edit ${item.title}`}
+                  />
+                  <View style={styles.editActions}>
+                    <Pressable onPress={saveEdit} accessibilityRole="button" hitSlop={8}>
+                      <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Save</Text>
+                    </Pressable>
+                    <Pressable onPress={() => setEditingId(null)} accessibilityRole="button" hitSlop={8}>
+                      <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Cancel</Text>
+                    </Pressable>
+                  </View>
                 </View>
+                {editDuplicate && (
+                  <Text style={[styles.error, styles.editError]}>{DUPLICATE_MESSAGE}</Text>
+                )}
               </View>
             ) : (
             <View style={styles.row}>
@@ -211,6 +279,32 @@ export default function TodoScreen() {
                   <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
                 </Pressable>
               </View>
+              {canMove && (
+                <View style={styles.moveActions}>
+                  {(['up', 'down'] as const).map((direction) => {
+                    const disabled = direction === 'up' ? index === 0 : index === todos.length - 1;
+                    return (
+                      <Pressable
+                        key={direction}
+                        onPress={() => moveTodo(item.id, direction === 'up' ? -1 : 1)}
+                        disabled={disabled}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Move ${item.title} ${direction}`}
+                        accessibilityState={{ disabled }}
+                        hitSlop={4}>
+                        <Text
+                          style={[
+                            styles.moveText,
+                            { color: Colors[colorScheme].tint },
+                            disabled && styles.moveDisabled,
+                          ]}>
+                          {direction === 'up' ? '↑' : '↓'}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
               <Pressable
                 onPress={() => deleteTodo(item.id)}
                 accessibilityRole="button"
@@ -225,11 +319,18 @@ export default function TodoScreen() {
         {todos.length > 0 && (
           <View style={styles.footer}>
             <Text>{`${remaining} ${remaining === 1 ? 'item' : 'items'} left`}</Text>
-            {remaining < todos.length && (
-              <Pressable onPress={clearCompleted} accessibilityRole="button" hitSlop={8}>
-                <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Clear completed</Text>
+            <View style={styles.footerActions}>
+              <Pressable onPress={() => markAll(remaining > 0)} accessibilityRole="button" hitSlop={8}>
+                <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>
+                  {remaining > 0 ? 'Mark all done' : 'Mark all not done'}
+                </Text>
               </Pressable>
-            )}
+              {remaining < todos.length && (
+                <Pressable onPress={clearCompleted} accessibilityRole="button" hitSlop={8}>
+                  <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Clear completed</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
         )}
         {lastDeleted && (
@@ -277,6 +378,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  search: {
+    flex: 0,
+    marginBottom: 12,
+  },
+  error: {
+    color: '#c00',
+    marginTop: -8,
+    marginBottom: 12,
+  },
   empty: {
     textAlign: 'center',
     marginTop: 32,
@@ -302,6 +412,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingTop: 12,
+  },
+  footerActions: {
+    flexDirection: 'row',
+    flexShrink: 1,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: 16,
   },
   undoBar: {
     flexDirection: 'row',
@@ -329,6 +446,30 @@ const styles = StyleSheet.create({
   },
   titlePress: {
     flex: 1,
+  },
+  editRow: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#ccc',
+  },
+  editFields: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  editError: {
+    marginTop: 6,
+    marginBottom: 0,
+  },
+  moveActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginHorizontal: 12,
+  },
+  moveText: {
+    fontSize: 20,
+  },
+  moveDisabled: {
+    opacity: 0.25,
   },
   editActions: {
     flexDirection: 'row',
