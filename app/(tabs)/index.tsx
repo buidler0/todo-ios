@@ -7,6 +7,7 @@ import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 
 const STORAGE_KEY = 'todos';
+const UNDO_MS = 5000;
 
 type Todo = { id: string; title: string; done: boolean };
 
@@ -37,6 +38,7 @@ export default function TodoScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [filter, setFilter] = useState<Filter>('All');
+  const [lastDeleted, setLastDeleted] = useState<{ todo: Todo; index: number } | null>(null);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
 
@@ -54,6 +56,12 @@ export default function TodoScreen() {
 
   const visibleTodos = todos.filter(FILTERS[filter]);
   const remaining = todos.filter((t) => !t.done).length;
+
+  useEffect(() => {
+    if (!lastDeleted) return;
+    const timer = setTimeout(() => setLastDeleted(null), UNDO_MS);
+    return () => clearTimeout(timer);
+  }, [lastDeleted]);
 
   function addTodo() {
     const title = draft.trim();
@@ -82,10 +90,20 @@ export default function TodoScreen() {
 
   function clearCompleted() {
     setTodos((current) => current.filter((t) => !t.done));
+    setLastDeleted(null);
   }
 
   function deleteTodo(id: string) {
-    setTodos((current) => current.filter((t) => t.id !== id));
+    const index = todos.findIndex((t) => t.id === id);
+    setLastDeleted({ todo: todos[index], index });
+    setTodos(todos.filter((t) => t.id !== id));
+  }
+
+  function undoDelete() {
+    if (!lastDeleted) return;
+    const { todo, index } = lastDeleted;
+    setTodos((current) => [...current.slice(0, index), todo, ...current.slice(index)]);
+    setLastDeleted(null);
   }
 
   return (
@@ -195,6 +213,14 @@ export default function TodoScreen() {
           )}
         </View>
       )}
+      {lastDeleted && (
+        <View style={styles.undoBar}>
+          <Text>To-do deleted.</Text>
+          <Pressable onPress={undoDelete} accessibilityRole="button" hitSlop={8}>
+            <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Undo</Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }
@@ -253,6 +279,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingTop: 12,
+  },
+  undoBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ccc',
   },
   row: {
     flexDirection: 'row',
