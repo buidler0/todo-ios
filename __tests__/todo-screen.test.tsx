@@ -252,3 +252,52 @@ test('clearing completed to-dos dismisses the undo offer', async () => {
 
   expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
 });
+
+test('searches by title, ignoring case and outer spaces, within the filter', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), '  BUY B ');
+  expect(screen.getByText('Buy bread')).toBeOnTheScreen();
+  expect(screen.queryByText('Buy milk')).toBeNull();
+  expect(screen.queryByText('Buy eggs')).toBeNull();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'buy');
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.getByText('Buy milk')).toBeOnTheScreen();
+  expect(screen.getByText('Buy eggs')).toBeOnTheScreen();
+  expect(screen.queryByText('Buy bread')).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.getByText('Buy bread')).toBeOnTheScreen();
+  expect(screen.queryByText('Buy milk')).toBeNull();
+});
+
+test('says so when the search matches nothing, and still counts every to-do', async () => {
+  await renderWithThree();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'zzz');
+  expect(screen.getByText('No matching to-dos.')).toBeOnTheScreen();
+  expect(screen.getByText('3 items left')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.getByText('No matching to-dos.')).toBeOnTheScreen();
+  expect(screen.queryByText('No done to-dos.')).toBeNull();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), '   ');
+  expect(screen.getByText('No done to-dos.')).toBeOnTheScreen();
+});
+
+test('never saves the search text', async () => {
+  await renderWithThree();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'milk');
+
+  const saved = await AsyncStorage.getItem('todos');
+  expect(JSON.parse(saved ?? '[]')).toMatchObject([
+    { title: 'Buy milk' },
+    { title: 'Buy bread' },
+    { title: 'Buy eggs' },
+  ]);
+  expect(await AsyncStorage.getAllKeys()).toEqual(['todos']);
+});
