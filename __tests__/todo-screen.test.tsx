@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
 import TodoScreen from '@/app/(tabs)/index';
 
@@ -8,7 +8,10 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 );
 
 beforeEach(() => AsyncStorage.clear());
-afterEach(() => jest.restoreAllMocks());
+afterEach(() => {
+  jest.restoreAllMocks();
+  jest.useRealTimers();
+});
 
 test('adds a to-do and ticks it done', async () => {
   render(<TodoScreen />);
@@ -185,4 +188,67 @@ test('clears completed to-dos and saves the rest', async () => {
   expect(screen.queryByRole('button', { name: 'Clear completed' })).toBeNull();
   const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
   expect(saved).toMatchObject([{ title: 'Buy bread', done: false }]);
+});
+
+async function renderWithThree() {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('Buy milk');
+  addTodo('Buy bread');
+  addTodo('Buy eggs');
+}
+
+test('undoes a delete at the old position, keeping its done state', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy bread' }));
+  expect(screen.queryByText('Buy bread')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  const [, restored] = screen.getAllByRole('checkbox');
+  expect(restored).toHaveAccessibleName('Buy bread');
+  expect(restored).toBeChecked();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([
+    { title: 'Buy milk', done: false },
+    { title: 'Buy bread', done: true },
+    { title: 'Buy eggs', done: false },
+  ]);
+});
+
+test('the undo offer expires after 5 seconds', async () => {
+  await renderWithThree();
+  jest.useFakeTimers();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
+  act(() => jest.advanceTimersByTime(4999));
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+
+  act(() => jest.advanceTimersByTime(1));
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('only the latest delete can be undone', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy eggs' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(screen.getByText('Buy eggs')).toBeOnTheScreen();
+  expect(screen.queryByText('Buy milk')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('clearing completed to-dos dismisses the undo offer', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
 });
