@@ -80,6 +80,10 @@ function restore(current: readonly Todo[], removed: readonly Removed[]): Todo[] 
   return next;
 }
 
+function sortByTitle(todos: readonly Todo[]): Todo[] {
+  return [...todos].sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'accent' }));
+}
+
 function undoMessage({ kind, removed }: Removal): string {
   if (kind === 'delete') return 'To-do deleted.';
   return `${removed.length} completed ${removed.length === 1 ? 'to-do' : 'to-dos'} cleared.`;
@@ -147,6 +151,7 @@ export default function TodoScreen() {
   // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
   const canReorder = filter === 'All' && !term;
   const hiddenCount = todos.length - visibleTodos.length;
+  const canSort = canReorder && todos.length >= 2;
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
@@ -301,6 +306,15 @@ export default function TodoScreen() {
         </View>
         {hiddenCount > 0 && (
           <Text style={styles.status}>{`Showing ${visibleTodos.length} of ${todos.length}`}</Text>
+        )}
+        {canSort && (
+          <Pressable
+            style={styles.sort}
+            onPress={() => setTodos(sortByTitle)}
+            accessibilityRole="button"
+            hitSlop={8}>
+            <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Sort A to Z</Text>
+          </Pressable>
         )}
         <FlatList
           data={visibleTodos}
@@ -482,6 +496,10 @@ const styles = StyleSheet.create({
   status: {
     marginBottom: 8,
     opacity: 0.6,
+  },
+  sort: {
+    alignSelf: 'flex-start',
+    marginBottom: 8,
   },
   filterSelectedText: {
     color: '#fff',

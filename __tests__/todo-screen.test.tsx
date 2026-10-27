@@ -576,6 +576,82 @@ test('shows no count while nothing is hidden', async () => {
   expect(screen.getByText('Showing 1 of 3')).toBeOnTheScreen();
 });
 
+test('sorts the list A to Z ignoring case and saves the new order', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('banana');
+  addTodo('Cherry');
+  addTodo('apple');
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Cherry' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Sort A to Z' }));
+
+  expect(titlesInOrder()).toEqual(['apple', 'banana', 'Cherry']);
+  expect(screen.getByRole('checkbox', { name: 'Cherry' })).toBeChecked();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([{ title: 'apple' }, { title: 'banana' }, { title: 'Cherry', done: true }]);
+});
+
+test('sort keeps to-dos with equal titles in their saved order', async () => {
+  await AsyncStorage.setItem(
+    'todos',
+    JSON.stringify([
+      { id: '1', title: 'zeta', done: false },
+      { id: '2', title: 'milk', done: false },
+      { id: '3', title: 'Milk', done: false },
+      { id: '4', title: 'apple', done: false },
+    ])
+  );
+  render(<TodoScreen />);
+  await screen.findByRole('checkbox', { name: 'zeta' });
+
+  fireEvent.press(screen.getByRole('button', { name: 'Sort A to Z' }));
+
+  expect(titlesInOrder()).toEqual(['apple', 'milk', 'Milk', 'zeta']);
+});
+
+test('sorting is only offered on the unfiltered, unsearched list of two or more', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  addTodo('banana');
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  addTodo('apple');
+  expect(screen.getByRole('button', { name: 'Sort A to Z' })).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'a');
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), '  ');
+  expect(screen.getByRole('button', { name: 'Sort A to Z' })).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete banana' }));
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+});
+
+test('sorting does not dismiss a pending Undo, and Undo still works after it', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('Cat');
+  addTodo('apple');
+  addTodo('Bob');
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Bob' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Sort A to Z' }));
+  expect(titlesInOrder()).toEqual(['apple', 'Cat']);
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(titlesInOrder()).toEqual(['apple', 'Cat', 'Bob']);
+});
+
 const TOO_LONG = 'Keep it to 60 characters.';
 
 test('refuses a 61-character add, keeps the draft, and clears the message on typing', async () => {
