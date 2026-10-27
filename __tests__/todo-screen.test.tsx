@@ -301,3 +301,55 @@ test('never saves the search text', async () => {
   ]);
   expect(await AsyncStorage.getAllKeys()).toEqual(['todos']);
 });
+
+function titlesInOrder() {
+  return screen.getAllByRole('checkbox').map((box) => box.props.accessibilityLabel);
+}
+
+test('moves a to-do up or down and saves the new order', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Move Buy eggs up' }));
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy eggs', 'Buy bread']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Move Buy milk down' }));
+  expect(titlesInOrder()).toEqual(['Buy eggs', 'Buy milk', 'Buy bread']);
+
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([
+    { title: 'Buy eggs' },
+    { title: 'Buy milk' },
+    { title: 'Buy bread' },
+  ]);
+});
+
+test('the first to-do cannot move up and the last cannot move down', async () => {
+  await renderWithThree();
+  expect(screen.getByRole('button', { name: 'Move Buy milk up' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Move Buy eggs down' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Move Buy milk down' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Move Buy eggs up' })).toBeEnabled();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Move Buy milk up' }));
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Move Buy bread down' }));
+  expect(screen.getByRole('button', { name: 'Move Buy bread up' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Move Buy bread down' })).toBeDisabled();
+});
+
+test('moving is only offered on the unfiltered, unsearched list', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.queryByRole('button', { name: /^Move / })).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  expect(screen.getByRole('button', { name: 'Move Buy bread up' })).toBeOnTheScreen();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'bread');
+  expect(screen.queryByRole('button', { name: /^Move / })).toBeNull();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), '  ');
+  expect(screen.getByRole('button', { name: 'Move Buy bread up' })).toBeOnTheScreen();
+});

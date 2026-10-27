@@ -39,6 +39,32 @@ function withUniqueIds(list: Todo[]): Todo[] {
   });
 }
 
+function MoveButton({
+  label,
+  glyph,
+  disabled,
+  onPress,
+  color,
+}: {
+  label: string;
+  glyph: string;
+  disabled: boolean;
+  onPress: () => void;
+  color: string;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      hitSlop={8}>
+      <Text style={{ color, fontSize: 16, opacity: disabled ? 0.3 : 1 }}>{glyph}</Text>
+    </Pressable>
+  );
+}
+
 export default function TodoScreen() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -70,6 +96,8 @@ export default function TodoScreen() {
   const visibleTodos = todos
     .filter(FILTERS[filter])
     .filter((t) => t.title.toLowerCase().includes(term));
+  // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
+  const canReorder = filter === 'All' && !term;
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
@@ -87,6 +115,17 @@ export default function TodoScreen() {
 
   function toggleTodo(id: string) {
     setTodos((current) => current.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+  }
+
+  function moveTodo(id: string, offset: -1 | 1) {
+    setTodos((current) => {
+      const from = current.findIndex((t) => t.id === id);
+      const to = from + offset;
+      if (from < 0 || to < 0 || to >= current.length) return current;
+      const next = [...current];
+      [next[from], next[to]] = [next[to], next[from]];
+      return next;
+    });
   }
 
   function startEditing(todo: Todo) {
@@ -189,7 +228,7 @@ export default function TodoScreen() {
                   : 'Nothing to do yet.'}
             </Text>
           }
-          renderItem={({ item }) =>
+          renderItem={({ item, index }) =>
             item.id === editingId ? (
               <View style={styles.row}>
                 <TextInput
@@ -229,6 +268,24 @@ export default function TodoScreen() {
                   <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
                 </Pressable>
               </View>
+              {canReorder && (
+                <View style={styles.moveActions}>
+                  <MoveButton
+                    label={`Move ${item.title} up`}
+                    glyph="↑"
+                    disabled={index === 0}
+                    onPress={() => moveTodo(item.id, -1)}
+                    color={Colors[colorScheme].tint}
+                  />
+                  <MoveButton
+                    label={`Move ${item.title} down`}
+                    glyph="↓"
+                    disabled={index === todos.length - 1}
+                    onPress={() => moveTodo(item.id, 1)}
+                    color={Colors[colorScheme].tint}
+                  />
+                </View>
+              )}
               <Pressable
                 onPress={() => deleteTodo(item.id)}
                 accessibilityRole="button"
@@ -351,6 +408,11 @@ const styles = StyleSheet.create({
   },
   titlePress: {
     flex: 1,
+  },
+  moveActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginHorizontal: 12,
   },
   editActions: {
     flexDirection: 'row',
