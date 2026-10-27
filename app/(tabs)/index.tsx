@@ -341,6 +341,9 @@ export default function TodoScreen() {
             </Pressable>
           )}
         </View>
+        {visibleTodos.length < todos.length && (
+          <Text style={styles.viewCount}>{`Showing ${visibleTodos.length} of ${todos.length}`}</Text>
+        )}
         <FlatList
           data={visibleTodos}
           keyboardShouldPersistTaps="handled"
@@ -517,6 +520,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
+  },
+  viewCount: {
+    marginBottom: 8,
+    opacity: 0.6,
   },
   sortButton: {
     marginLeft: 'auto',

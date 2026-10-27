@@ -666,3 +666,45 @@ test('Sort is hidden until the list has two to-dos', async () => {
   addTodo('Buy bread');
   expect(screen.getByRole('button', { name: 'Sort A to Z' })).toBeOnTheScreen();
 });
+
+test('shows how many to-dos a filter shows, only while it hides some', async () => {
+  await renderWithThree();
+  addTodo('Buy rye');
+  addTodo('Buy tea');
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  expect(screen.queryByText(/^Showing /)).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.getByText('Showing 2 of 5')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.getByText('Showing 3 of 5')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  expect(screen.queryByText(/^Showing /)).toBeNull();
+});
+
+test('shows the count while a search hides to-dos, and updates as the list changes', async () => {
+  await renderWithThree();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'milk');
+  expect(screen.getByText('Showing 1 of 3')).toBeOnTheScreen();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'zzz');
+  expect(screen.getByText('Showing 0 of 3')).toBeOnTheScreen();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'milk');
+  addTodo('Buy oat milk');
+  expect(screen.getByText('Showing 2 of 4')).toBeOnTheScreen();
+});
+
+test('hides the count when nothing is hidden, even with a search active', async () => {
+  await renderWithThree();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'buy');
+  expect(screen.queryByText(/^Showing /)).toBeNull();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), '   ');
+  expect(screen.queryByText(/^Showing /)).toBeNull();
+});
