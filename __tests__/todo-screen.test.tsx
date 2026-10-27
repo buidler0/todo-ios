@@ -162,7 +162,7 @@ test('says so when a filter matches nothing', async () => {
 
 test('adds a to-do while Done is selected without changing the filter', async () => {
   render(<TodoScreen />);
-  await screen.findByText('Nothing to do yet.');
+  await screen.findByRole('button', { name: 'Done', disabled: false });
   fireEvent.press(screen.getByRole('button', { name: 'Done' }));
 
   addTodo('Buy milk');
@@ -664,4 +664,65 @@ test('a mark all restarts the 5 second undo timer', async () => {
   act(() => jest.advanceTimersByTime(4999));
 
   expect(screen.getByText('Marked all done.')).toBeOnTheScreen();
+});
+
+test('selects the saved filter again on the next launch', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+
+  screen.unmount();
+  render(<TodoScreen />);
+  await screen.findByRole('checkbox', { name: 'Buy bread' });
+
+  expect(screen.getByRole('button', { name: 'Done' })).toBeSelected();
+  expect(screen.getByRole('button', { name: 'All' })).not.toBeSelected();
+  expect(titlesInOrder()).toEqual(['Buy bread']);
+});
+
+test('falls back to All when the saved filter is not one of the filters', async () => {
+  await AsyncStorage.multiSet([
+    ['todos', JSON.stringify([{ id: '1', title: 'Buy milk', done: false, pinned: false }])],
+    ['filter', 'Archived'],
+  ]);
+  render(<TodoScreen />);
+
+  await screen.findByRole('checkbox', { name: 'Buy milk' });
+  expect(screen.getByRole('button', { name: 'All' })).toBeSelected();
+});
+
+test('saves the filter but still never the search text', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'milk');
+
+  expect(await AsyncStorage.getItem('filter')).toBe('Active');
+  expect([...(await AsyncStorage.getAllKeys())].sort()).toEqual(['filter', 'todos']);
+  screen.unmount();
+  render(<TodoScreen />);
+  await screen.findByRole('checkbox', { name: 'Buy milk' });
+  expect(screen.getByPlaceholderText('Search to-dos').props.value).toBe('');
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+});
+
+test('the filter buttons are disabled until the saved data has loaded', async () => {
+  let finishLoading: (saved: [string, string | null][]) => void = () => {};
+  jest.spyOn(AsyncStorage, 'multiGet').mockReturnValueOnce(
+    new Promise((resolve) => {
+      finishLoading = resolve;
+    })
+  );
+  render(<TodoScreen />);
+
+  for (const name of ['All', 'Active', 'Done']) {
+    expect(screen.getByRole('button', { name })).toBeDisabled();
+  }
+
+  await act(async () => finishLoading([['todos', null], ['filter', 'Done']]));
+
+  for (const name of ['All', 'Active', 'Done']) {
+    expect(screen.getByRole('button', { name })).toBeEnabled();
+  }
+  expect(screen.getByRole('button', { name: 'Done' })).toBeSelected();
 });
