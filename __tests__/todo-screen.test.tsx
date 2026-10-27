@@ -242,15 +242,103 @@ test('only the latest delete can be undone', async () => {
   expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
 });
 
-test('clearing completed to-dos dismisses the undo offer', async () => {
+test('clearing completed to-dos replaces a pending delete offer', async () => {
   await renderWithThree();
   fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
   fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
-  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+  expect(screen.getByText('To-do deleted.')).toBeOnTheScreen();
 
   fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+  expect(screen.queryByText('To-do deleted.')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy eggs']);
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('a delete after a clear replaces the offer, so Undo restores only the deleted to-do', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy eggs' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy eggs']);
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('undoes Clear completed, putting every cleared to-do back in place and saving', async () => {
+  await renderWithThree();
+  addTodo('Buy tea');
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy eggs' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy tea']);
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs', 'Buy tea']);
+  expect(screen.getByRole('checkbox', { name: 'Buy milk' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy eggs' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy bread' })).not.toBeChecked();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([
+    { title: 'Buy milk', done: true },
+    { title: 'Buy bread', done: false },
+    { title: 'Buy eggs', done: true },
+    { title: 'Buy tea', done: false },
+  ]);
+});
+
+test('the undo bar after a clear says how many to-dos it will bring back', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+  expect(screen.getByText('1 completed to-do cleared.')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy eggs' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+  expect(screen.getByText('2 completed to-dos cleared.')).toBeOnTheScreen();
+});
+
+test('the clear undo offer expires after 5 seconds', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  jest.useFakeTimers();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+  act(() => jest.advanceTimersByTime(4999));
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+
+  act(() => jest.advanceTimersByTime(1));
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('toggling a to-do does not restart the undo timer', async () => {
+  await renderWithThree();
+  jest.useFakeTimers();
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
+
+  act(() => jest.advanceTimersByTime(3000));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  act(() => jest.advanceTimersByTime(2000));
 
   expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('undoing a clear after adding a to-do keeps the new one last', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy eggs' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+  addTodo('Buy tea');
+
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs', 'Buy tea']);
 });
 
 test('searches by title, ignoring case and outer spaces, within the filter', async () => {

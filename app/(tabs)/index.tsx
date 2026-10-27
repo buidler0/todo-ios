@@ -57,6 +57,34 @@ function withUniqueIds(list: Todo[]): Todo[] {
   });
 }
 
+type Removed = { todo: Todo; index: number };
+
+type Removal = { kind: 'delete' | 'clear'; removed: Removed[] };
+
+function removeWhere(
+  todos: readonly Todo[],
+  pred: (t: Todo) => boolean
+): { kept: Todo[]; removed: Removed[] } {
+  const kept: Todo[] = [];
+  const removed: Removed[] = [];
+  todos.forEach((todo, index) => (pred(todo) ? removed.push({ todo, index }) : kept.push(todo)));
+  return { kept, removed };
+}
+
+function restore(current: readonly Todo[], removed: readonly Removed[]): Todo[] {
+  const next = [...current];
+  for (const { todo, index } of [...removed].sort((x, y) => x.index - y.index)) {
+    if (next.some((t) => t.id === todo.id)) continue;
+    next.splice(Math.min(index, next.length), 0, todo);
+  }
+  return next;
+}
+
+function undoMessage({ kind, removed }: Removal): string {
+  if (kind === 'delete') return 'To-do deleted.';
+  return `${removed.length} completed ${removed.length === 1 ? 'to-do' : 'to-dos'} cleared.`;
+}
+
 function MoveButton({
   label,
   glyph,
@@ -93,7 +121,7 @@ export default function TodoScreen() {
   const [query, setQuery] = useState('');
   const [addError, setAddError] = useState<TitleError | null>(null);
   const [editError, setEditError] = useState<TitleError | null>(null);
-  const [lastDeleted, setLastDeleted] = useState<{ todo: Todo; index: number } | null>(null);
+  const [removal, setRemoval] = useState<Removal | null>(null);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
   const backgroundColor = useThemeColor({}, 'background');
@@ -121,10 +149,10 @@ export default function TodoScreen() {
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
-    if (!lastDeleted) return;
-    const timer = setTimeout(() => setLastDeleted(null), UNDO_MS);
+    if (!removal) return;
+    const timer = setTimeout(() => setRemoval(null), UNDO_MS);
     return () => clearTimeout(timer);
-  }, [lastDeleted]);
+  }, [removal]);
 
   function changeDraft(text: string) {
     setDraft(text);
@@ -192,22 +220,24 @@ export default function TodoScreen() {
     setTodos((current) => current.map((t) => ({ ...t, done })));
   }
 
+  function remove(kind: Removal['kind'], pred: (t: Todo) => boolean) {
+    const { kept, removed } = removeWhere(todos, pred);
+    setTodos(kept);
+    setRemoval({ kind, removed });
+  }
+
   function clearCompleted() {
-    setTodos((current) => current.filter((t) => !t.done));
-    setLastDeleted(null);
+    remove('clear', (t) => t.done);
   }
 
   function deleteTodo(id: string) {
-    const index = todos.findIndex((t) => t.id === id);
-    setLastDeleted({ todo: todos[index], index });
-    setTodos(todos.filter((t) => t.id !== id));
+    remove('delete', (t) => t.id === id);
   }
 
-  function undoDelete() {
-    if (!lastDeleted) return;
-    const { todo, index } = lastDeleted;
-    setTodos((current) => [...current.slice(0, index), todo, ...current.slice(index)]);
-    setLastDeleted(null);
+  function undo() {
+    if (!removal) return;
+    setTodos((current) => restore(current, removal.removed));
+    setRemoval(null);
   }
 
   return (
@@ -373,10 +403,10 @@ export default function TodoScreen() {
             </View>
           </View>
         )}
-        {lastDeleted && (
+        {removal && (
           <View style={styles.undoBar}>
-            <Text>To-do deleted.</Text>
-            <Pressable onPress={undoDelete} accessibilityRole="button" hitSlop={8}>
+            <Text>{undoMessage(removal)}</Text>
+            <Pressable onPress={undo} accessibilityRole="button" hitSlop={8}>
               <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Undo</Text>
             </Pressable>
           </View>
