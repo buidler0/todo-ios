@@ -104,6 +104,7 @@ export default function TodoScreen() {
     .filter((t) => t.title.toLowerCase().includes(term));
   // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
   const canReorder = filter === 'All' && !term;
+  const hiddenCount = todos.length - visibleTodos.length;
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
@@ -267,6 +268,11 @@ export default function TodoScreen() {
               hitSlop={8}>
               <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Sort A to Z</Text>
             </Pressable>
+          )}
+          {hiddenCount > 0 && (
+            <Text style={[styles.filtersEnd, styles.viewCount]}>
+              {`Showing ${visibleTodos.length} of ${todos.length}`}
+            </Text>
           )}
         </View>
         <FlatList
@@ -442,6 +448,9 @@ const styles = StyleSheet.create({
   },
   filtersEnd: {
     marginLeft: 'auto',
+  },
+  viewCount: {
+    opacity: 0.6,
   },
   filterButton: {
     borderWidth: 1,

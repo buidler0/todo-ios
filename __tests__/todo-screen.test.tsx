@@ -288,6 +288,32 @@ test('says so when the search matches nothing, and still counts every to-do', as
   expect(screen.getByText('No done to-dos.')).toBeOnTheScreen();
 });
 
+test('shows how many to-dos are visible while the filter or search hides some', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  expect(screen.queryByText(/^Showing/)).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.getByText('Showing 2 of 3')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.getByText('Showing 1 of 3')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  expect(screen.queryByText(/^Showing/)).toBeNull();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'zzz');
+  expect(screen.getByText('Showing 0 of 3')).toBeOnTheScreen();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'buy');
+  expect(screen.queryByText(/^Showing/)).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.getByText('Showing 1 of 3')).toBeOnTheScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  expect(screen.queryByText(/^Showing/)).toBeNull();
+});
+
 test('never saves the search text', async () => {
   await renderWithThree();
 
