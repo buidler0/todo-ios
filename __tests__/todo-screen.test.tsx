@@ -98,3 +98,21 @@ test('repairs a saved list whose to-dos share an id', async () => {
   expect(screen.getByRole('checkbox', { name: 'Buy milk' })).toBeChecked();
   expect(screen.getByRole('checkbox', { name: 'Buy bread' })).not.toBeChecked();
 });
+
+test('counts the to-dos still left', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  expect(screen.queryByText(/left/)).toBeNull();
+
+  addTodo('Buy milk');
+  expect(screen.getByText('1 item left')).toBeOnTheScreen();
+
+  addTodo('Buy bread');
+  expect(screen.getByText('2 items left')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  expect(screen.getByText('1 item left')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  expect(screen.getByText('0 items left')).toBeOnTheScreen();
+});
