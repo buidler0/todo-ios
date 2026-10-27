@@ -8,6 +8,7 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 );
 
 beforeEach(() => AsyncStorage.clear());
+afterEach(() => jest.restoreAllMocks());
 
 test('adds a to-do and ticks it done', async () => {
   render(<TodoScreen />);
@@ -49,4 +50,51 @@ test('edits a to-do, ignoring cancel and empty saves', async () => {
   fireEvent.press(screen.getByRole('button', { name: 'Save' }));
   expect(screen.getByText('Buy oat milk')).toBeOnTheScreen();
   expect(screen.queryByText('Buy milk')).toBeNull();
+});
+
+function addTodo(title: string) {
+  fireEvent.changeText(screen.getByPlaceholderText('What needs doing?'), title);
+  fireEvent.press(screen.getByRole('button', { name: 'Add' }));
+}
+
+test('to-dos added in the same millisecond stay independent', async () => {
+  jest.spyOn(Date, 'now').mockReturnValue(1000);
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+
+  addTodo('Buy milk');
+  addTodo('Buy bread');
+  addTodo('Buy eggs');
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  expect(screen.getByRole('checkbox', { name: 'Buy milk' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy bread' })).not.toBeChecked();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'Buy rye');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  expect(screen.getByText('Buy rye')).toBeOnTheScreen();
+  expect(screen.getByText('Buy milk')).toBeOnTheScreen();
+  expect(screen.getByText('Buy eggs')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy rye' }));
+  expect(screen.queryByText('Buy rye')).toBeNull();
+  expect(screen.getByRole('checkbox', { name: 'Buy milk' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy eggs' })).not.toBeChecked();
+});
+
+test('repairs a saved list whose to-dos share an id', async () => {
+  await AsyncStorage.setItem(
+    'todos',
+    JSON.stringify([
+      { id: '1', title: 'Buy milk', done: false },
+      { id: '1', title: 'Buy bread', done: false },
+    ])
+  );
+  render(<TodoScreen />);
+
+  fireEvent.press(await screen.findByRole('checkbox', { name: 'Buy milk' }));
+
+  expect(screen.getByRole('checkbox', { name: 'Buy milk' })).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'Buy bread' })).not.toBeChecked();
 });
