@@ -20,8 +20,12 @@ const MAX_TITLE = 60;
 
 type Todo = { id: string; title: string; done: boolean };
 
-// Entries are in ascending list order, so reinserting them in turn restores each old position.
 type Removal = { entries: { todo: Todo; index: number }[]; message: string };
+
+function removeWhere(list: Todo[], remove: (t: Todo) => boolean, message: string) {
+  const entries = list.flatMap((todo, index) => (remove(todo) ? [{ todo, index }] : []));
+  return { kept: list.filter((t) => !remove(t)), removal: { entries, message } };
+}
 
 type Filter = 'All' | 'Active' | 'Done';
 
@@ -36,9 +40,10 @@ const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().
 
 type TitleField = 'add' | 'edit';
 
-// Counts code points, so an emoji is one character rather than two UTF-16 units.
+const titleLength = (title: string) => [...title.trim()].length;
+
 function titleProblem(title: string, todos: Todo[], ignoreId?: string | null): string | null {
-  if ([...title.trim()].length > MAX_TITLE) return `Keep it to ${MAX_TITLE} characters.`;
+  if (titleLength(title) > MAX_TITLE) return `Keep it to ${MAX_TITLE} characters.`;
   if (todos.some((t) => t.id !== ignoreId && sameTitle(t.title, title))) return 'Already on the list.';
   return null;
 }
@@ -201,15 +206,15 @@ export default function TodoScreen() {
   }
 
   function clearCompleted() {
-    const entries = todos.flatMap((todo, index) => (todo.done ? [{ todo, index }] : []));
-    setLastRemoved({ entries, message: 'Completed to-dos cleared.' });
-    setTodos(todos.filter((t) => !t.done));
+    const { kept, removal } = removeWhere(todos, (t) => t.done, 'Completed to-dos cleared.');
+    setLastRemoved(removal);
+    setTodos(kept);
   }
 
   function deleteTodo(id: string) {
-    const index = todos.findIndex((t) => t.id === id);
-    setLastRemoved({ entries: [{ todo: todos[index], index }], message: 'To-do deleted.' });
-    setTodos(todos.filter((t) => t.id !== id));
+    const { kept, removal } = removeWhere(todos, (t) => t.id === id, 'To-do deleted.');
+    setLastRemoved(removal);
+    setTodos(kept);
   }
 
   function undoRemoval() {
