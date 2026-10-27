@@ -590,3 +590,46 @@ test('a to-do can change its own title to a different case', async () => {
   expect(screen.getByText('BUY MILK')).toBeOnTheScreen();
   expect(screen.queryByLabelText(/^Edit Buy milk$/)).toBeNull();
 });
+
+const SIXTY = 'x'.repeat(60);
+
+test('refuses an add over 60 characters, keeps the draft, and allows exactly 60', async () => {
+  await renderWithThree();
+  expect(screen.queryByText('Keep it to 60 characters.')).toBeNull();
+
+  addTodo(`${SIXTY}y`);
+
+  expect(screen.getByText('Keep it to 60 characters.')).toBeOnTheScreen();
+  expect(screen.getByPlaceholderText('What needs doing?').props.value).toBe(`${SIXTY}y`);
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toHaveLength(3);
+
+  fireEvent.changeText(screen.getByPlaceholderText('What needs doing?'), `  ${SIXTY}  `);
+  expect(screen.queryByText('Keep it to 60 characters.')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Add' }));
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs', SIXTY]);
+});
+
+test('refuses an edit over 60 characters, keeps the old title, and stays in editing', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), `${SIXTY}y`);
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(screen.getByText('Keep it to 60 characters.')).toBeOnTheScreen();
+  expect(screen.getByLabelText('Edit Buy bread')).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Save' })).toBeOnTheScreen();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([
+    { title: 'Buy milk' },
+    { title: 'Buy bread' },
+    { title: 'Buy eggs' },
+  ]);
+
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), SIXTY);
+  expect(screen.queryByText('Keep it to 60 characters.')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  expect(titlesInOrder()).toEqual(['Buy milk', SIXTY, 'Buy eggs']);
+});

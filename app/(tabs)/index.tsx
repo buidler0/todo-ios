@@ -16,6 +16,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 
 const STORAGE_KEY = 'todos';
 const UNDO_MS = 5000;
+const MAX_TITLE = 60;
 
 type Todo = { id: string; title: string; done: boolean };
 
@@ -32,6 +33,15 @@ const FILTERS: Record<Filter, (t: Todo) => boolean> = {
 const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
 
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+type TitleField = 'add' | 'edit';
+
+// Counts code points, so an emoji is one character rather than two UTF-16 units.
+function titleProblem(title: string, todos: Todo[], ignoreId?: string | null): string | null {
+  if ([...title.trim()].length > MAX_TITLE) return `Keep it to ${MAX_TITLE} characters.`;
+  if (todos.some((t) => t.id !== ignoreId && sameTitle(t.title, title))) return 'Already on the list.';
+  return null;
+}
 
 const sortedByTitle = (list: Todo[]) =>
   [...list].sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()));
@@ -81,7 +91,7 @@ export default function TodoScreen() {
   const [editDraft, setEditDraft] = useState('');
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
-  const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
+  const [titleError, setTitleError] = useState<{ field: TitleField; message: string } | null>(null);
   const [lastRemoved, setLastRemoved] = useState<Removal | null>(null);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
@@ -116,25 +126,26 @@ export default function TodoScreen() {
     return () => clearTimeout(timer);
   }, [lastRemoved]);
 
-  function clearDuplicate(source: 'add' | 'edit') {
-    setDuplicateIn((current) => (current === source ? null : current));
+  function clearTitleError(field: TitleField) {
+    setTitleError((current) => (current?.field === field ? null : current));
   }
 
   function changeDraft(text: string) {
     setDraft(text);
-    clearDuplicate('add');
+    clearTitleError('add');
   }
 
   function changeEditDraft(text: string) {
     setEditDraft(text);
-    clearDuplicate('edit');
+    clearTitleError('edit');
   }
 
   function addTodo() {
     const title = draft.trim();
     if (!title) return;
-    if (todos.some((t) => sameTitle(t.title, title))) {
-      setDuplicateIn('add');
+    const problem = titleProblem(title, todos);
+    if (problem) {
+      setTitleError({ field: 'add', message: problem });
       return;
     }
     setTodos((current) => [...current, { id: newId(), title, done: false }]);
@@ -163,18 +174,19 @@ export default function TodoScreen() {
   function startEditing(todo: Todo) {
     setEditingId(todo.id);
     setEditDraft(todo.title);
-    clearDuplicate('edit');
+    clearTitleError('edit');
   }
 
   function cancelEdit() {
     setEditingId(null);
-    clearDuplicate('edit');
+    clearTitleError('edit');
   }
 
   function saveEdit() {
     const title = editDraft.trim();
-    if (todos.some((t) => t.id !== editingId && sameTitle(t.title, title))) {
-      setDuplicateIn('edit');
+    const problem = titleProblem(title, todos, editingId);
+    if (problem) {
+      setTitleError({ field: 'edit', message: problem });
       return;
     }
     // An empty save keeps the old text rather than blanking the to-do.
@@ -239,7 +251,7 @@ export default function TodoScreen() {
               <Text style={styles.addButtonText}>Add</Text>
             </Pressable>
           </View>
-          {duplicateIn === 'add' && <Text style={styles.duplicate}>Already on the list.</Text>}
+          {titleError?.field === 'add' && <Text style={styles.titleError}>{titleError.message}</Text>}
         </View>
         <TextInput
           style={[styles.input, styles.search, { color: textColor }]}
@@ -318,7 +330,9 @@ export default function TodoScreen() {
                     </Pressable>
                   </View>
                 </View>
-                {duplicateIn === 'edit' && <Text style={styles.duplicate}>Already on the list.</Text>}
+                {titleError?.field === 'edit' && (
+                  <Text style={styles.titleError}>{titleError.message}</Text>
+                )}
               </View>
             ) : (
             <View style={styles.row}>
@@ -416,7 +430,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  duplicate: {
+  titleError: {
     color: '#c0392b',
     marginTop: 6,
   },
