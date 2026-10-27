@@ -10,6 +10,17 @@ const STORAGE_KEY = 'todos';
 
 type Todo = { id: string; title: string; done: boolean };
 
+const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+function withUniqueIds(list: Todo[]): Todo[] {
+  const seen = new Set<string>();
+  return list.map((t) => {
+    const todo = seen.has(t.id) ? { ...t, id: newId() } : t;
+    seen.add(todo.id);
+    return todo;
+  });
+}
+
 export default function TodoScreen() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -21,7 +32,7 @@ export default function TodoScreen() {
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((saved) => {
-      if (saved) setTodos(JSON.parse(saved));
+      if (saved) setTodos(withUniqueIds(JSON.parse(saved)));
       setLoaded(true);
     });
   }, []);
@@ -34,7 +45,7 @@ export default function TodoScreen() {
   function addTodo() {
     const title = draft.trim();
     if (!title) return;
-    setTodos((current) => [...current, { id: Date.now().toString(), title, done: false }]);
+    setTodos((current) => [...current, { id: newId(), title, done: false }]);
     setDraft('');
   }
 
