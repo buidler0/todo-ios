@@ -368,6 +368,21 @@ test('refuses to add a duplicate title until the text changes', async () => {
   expect(screen.getAllByRole('checkbox')).toHaveLength(2);
 });
 
+test('undo drops the deleted to-do when its title is back on the list', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
+  addTodo('buy milk');
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(screen.getAllByRole('checkbox')).toHaveLength(3);
+  expect(screen.getByText('buy milk')).toBeOnTheScreen();
+  expect(screen.queryByText('Buy milk')).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  const saved = await savedTodos();
+  expect(saved.filter((t: { title: string }) => t.title.toLowerCase() === 'buy milk')).toHaveLength(1);
+});
+
 test('refuses to save an edit that duplicates another title', async () => {
   render(<TodoScreen />);
   await screen.findByText('Nothing to do yet.');

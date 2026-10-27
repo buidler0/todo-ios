@@ -162,7 +162,9 @@ export default function TodoScreen() {
   function undoDelete() {
     if (!lastDeleted) return;
     const { todo, index } = lastDeleted;
-    setTodos((current) => [...current.slice(0, index), todo, ...current.slice(index)]);
+    if (!isDuplicate(todo.title)) {
+      setTodos((current) => [...current.slice(0, index), todo, ...current.slice(index)]);
+    }
     setLastDeleted(null);
   }
 
