@@ -451,3 +451,97 @@ test('a to-do can change its own title to a different case', async () => {
   expect(screen.getByText('BUY MILK')).toBeOnTheScreen();
   expect(screen.queryByLabelText(/^Edit Buy milk$/)).toBeNull();
 });
+
+function pin(title: string) {
+  fireEvent.press(screen.getByRole('button', { name: `Pin ${title}` }));
+}
+
+async function renderWithFour() {
+  await renderWithThree();
+  addTodo('Buy rye');
+}
+
+test('pinned to-dos show first in every view, each group in list order', async () => {
+  await renderWithFour();
+  pin('Buy bread');
+  pin('Buy rye');
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy eggs' }));
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy rye', 'Buy milk', 'Buy eggs']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(titlesInOrder()).toEqual(['Buy rye', 'Buy milk']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy eggs']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'e');
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy rye', 'Buy eggs']);
+});
+
+test('a pinned to-do offers Unpin, and the pin is saved across a remount', async () => {
+  await renderWithThree();
+
+  pin('Buy bread');
+  expect(screen.getByRole('button', { name: 'Unpin Buy bread' })).toBeOnTheScreen();
+  expect(screen.queryByRole('button', { name: 'Pin Buy bread' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Pin Buy milk' })).toBeOnTheScreen();
+
+  screen.unmount();
+  render(<TodoScreen />);
+  await screen.findByRole('button', { name: 'Unpin Buy bread' });
+  await act(async () => {});
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy milk', 'Buy eggs']);
+});
+
+test('unpinning returns a to-do to its old place', async () => {
+  await renderWithThree();
+
+  pin('Buy eggs');
+  expect(titlesInOrder()).toEqual(['Buy eggs', 'Buy milk', 'Buy bread']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Unpin Buy eggs' }));
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+});
+
+test('the first to-do of each group cannot move up and the last cannot move down', async () => {
+  await renderWithFour();
+  pin('Buy bread');
+  pin('Buy rye');
+
+  expect(screen.getByRole('button', { name: 'Move Buy bread up' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Move Buy bread down' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Move Buy rye up' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Move Buy rye down' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Move Buy milk up' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Move Buy milk down' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Move Buy eggs up' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Move Buy eggs down' })).toBeDisabled();
+});
+
+test('a move swaps within a group, skipping a to-do of the other group between them', async () => {
+  await renderWithThree();
+  pin('Buy bread');
+
+  fireEvent.press(screen.getByRole('button', { name: 'Move Buy eggs up' }));
+
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy eggs', 'Buy milk']);
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([{ title: 'Buy eggs' }, { title: 'Buy bread' }, { title: 'Buy milk' }]);
+});
+
+test('a saved list with no pin field loads with every to-do unpinned', async () => {
+  await AsyncStorage.setItem(
+    'todos',
+    JSON.stringify([
+      { id: '1', title: 'Buy milk', done: false },
+      { id: '2', title: 'Buy bread', done: true },
+    ])
+  );
+  render(<TodoScreen />);
+
+  await screen.findByRole('button', { name: 'Pin Buy milk' });
+  expect(screen.getByRole('button', { name: 'Pin Buy bread' })).toBeOnTheScreen();
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread']);
+});

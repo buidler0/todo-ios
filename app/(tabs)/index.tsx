@@ -17,7 +17,8 @@ import { useColorScheme } from '@/components/useColorScheme';
 const STORAGE_KEY = 'todos';
 const UNDO_MS = 5000;
 
-type Todo = { id: string; title: string; done: boolean };
+type Todo = { id: string; title: string; done: boolean; pinned: boolean };
+type SavedTodo = Omit<Todo, 'pinned'> & { pinned?: boolean };
 
 type Filter = 'All' | 'Active' | 'Done';
 
@@ -32,13 +33,32 @@ const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-function withUniqueIds(list: Todo[]): Todo[] {
+function withUniqueIds<T extends { id: string }>(list: T[]): T[] {
   const seen = new Set<string>();
   return list.map((t) => {
     const todo = seen.has(t.id) ? { ...t, id: newId() } : t;
     seen.add(todo.id);
     return todo;
   });
+}
+
+function fromSaved(raw: string | null): Todo[] {
+  if (!raw) return [];
+  return withUniqueIds<SavedTodo>(JSON.parse(raw)).map((t) => ({ ...t, pinned: t.pinned === true }));
+}
+
+const pinnedFirst = (list: Todo[]) => [
+  ...list.filter((t) => t.pinned),
+  ...list.filter((t) => !t.pinned),
+];
+
+function groupNeighbour(list: Todo[], id: string, offset: -1 | 1): number {
+  const from = list.findIndex((t) => t.id === id);
+  if (from < 0) return -1;
+  for (let i = from + offset; i >= 0 && i < list.length; i += offset) {
+    if (list[i].pinned === list[from].pinned) return i;
+  }
+  return -1;
 }
 
 function MoveButton({
@@ -85,7 +105,7 @@ export default function TodoScreen() {
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((saved) => {
-      if (saved) setTodos(withUniqueIds(JSON.parse(saved)));
+      setTodos(fromSaved(saved));
       setLoaded(true);
     });
   }, []);
@@ -96,9 +116,9 @@ export default function TodoScreen() {
   }, [todos, loaded]);
 
   const term = query.trim().toLowerCase();
-  const visibleTodos = todos
-    .filter(FILTERS[filter])
-    .filter((t) => t.title.toLowerCase().includes(term));
+  const visibleTodos = pinnedFirst(
+    todos.filter(FILTERS[filter]).filter((t) => t.title.toLowerCase().includes(term)),
+  );
   // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
   const canReorder = filter === 'All' && !term;
   const remaining = todos.filter((t) => !t.done).length;
@@ -130,7 +150,7 @@ export default function TodoScreen() {
       setDuplicateIn('add');
       return;
     }
-    setTodos((current) => [...current, { id: newId(), title, done: false }]);
+    setTodos((current) => [...current, { id: newId(), title, done: false, pinned: false }]);
     setDraft('');
   }
 
@@ -138,11 +158,15 @@ export default function TodoScreen() {
     setTodos((current) => current.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
   }
 
+  function togglePin(id: string) {
+    setTodos((current) => current.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)));
+  }
+
   function moveTodo(id: string, offset: -1 | 1) {
     setTodos((current) => {
       const from = current.findIndex((t) => t.id === id);
-      const to = from + offset;
-      if (from < 0 || to < 0 || to >= current.length) return current;
+      const to = groupNeighbour(current, id, offset);
+      if (to < 0) return current;
       const next = [...current];
       [next[from], next[to]] = [next[to], next[from]];
       return next;
@@ -266,7 +290,7 @@ export default function TodoScreen() {
                   : 'Nothing to do yet.'}
             </Text>
           }
-          renderItem={({ item, index }) =>
+          renderItem={({ item }) =>
             item.id === editingId ? (
               <View>
                 <View style={styles.row}>
@@ -309,19 +333,29 @@ export default function TodoScreen() {
                   <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
                 </Pressable>
               </View>
+              <Pressable
+                onPress={() => togglePin(item.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.pinned ? 'Unpin' : 'Pin'} ${item.title}`}
+                style={styles.rowButton}
+                hitSlop={8}>
+                <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>
+                  {item.pinned ? 'Unpin' : 'Pin'}
+                </Text>
+              </Pressable>
               {canReorder && (
                 <View style={styles.moveActions}>
                   <MoveButton
                     label={`Move ${item.title} up`}
                     glyph="↑"
-                    disabled={index === 0}
+                    disabled={groupNeighbour(todos, item.id, -1) < 0}
                     onPress={() => moveTodo(item.id, -1)}
                     color={Colors[colorScheme].tint}
                   />
                   <MoveButton
                     label={`Move ${item.title} down`}
                     glyph="↓"
-                    disabled={index === todos.length - 1}
+                    disabled={groupNeighbour(todos, item.id, 1) < 0}
                     onPress={() => moveTodo(item.id, 1)}
                     color={Colors[colorScheme].tint}
                   />
@@ -331,6 +365,7 @@ export default function TodoScreen() {
                 onPress={() => deleteTodo(item.id)}
                 accessibilityRole="button"
                 accessibilityLabel={`Delete ${item.title}`}
+                style={styles.rowButton}
                 hitSlop={8}>
                 <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Delete</Text>
               </Pressable>
@@ -469,6 +504,9 @@ const styles = StyleSheet.create({
   },
   titlePress: {
     flex: 1,
+  },
+  rowButton: {
+    marginLeft: 12,
   },
   moveActions: {
     flexDirection: 'row',
