@@ -540,6 +540,42 @@ test('a to-do can change its own title to a different case', async () => {
   expect(screen.queryByLabelText(/^Edit Buy milk$/)).toBeNull();
 });
 
+test('shows how many to-dos a filter or search shows out of the whole list', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.getByText('Showing 2 of 3')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'milk');
+  expect(screen.getByText('Showing 1 of 3')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'buy');
+  expect(screen.getByText('Showing 2 of 3')).toBeOnTheScreen();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'zzz');
+  expect(screen.getByText('Showing 0 of 3')).toBeOnTheScreen();
+  expect(screen.getByText('No matching to-dos.')).toBeOnTheScreen();
+});
+
+test('shows no count while nothing is hidden', async () => {
+  await renderWithThree();
+  expect(screen.queryByText(/^Showing /)).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.queryByText(/^Showing /)).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'buy');
+  expect(screen.queryByText(/^Showing /)).toBeNull();
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.getByText('Showing 1 of 3')).toBeOnTheScreen();
+});
+
 const TOO_LONG = 'Keep it to 60 characters.';
 
 test('refuses a 61-character add, keeps the draft, and clears the message on typing', async () => {

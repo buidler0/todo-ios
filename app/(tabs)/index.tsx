@@ -146,6 +146,7 @@ export default function TodoScreen() {
     .filter((t) => t.title.toLowerCase().includes(term));
   // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
   const canReorder = filter === 'All' && !term;
+  const hiddenCount = todos.length - visibleTodos.length;
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
@@ -298,6 +299,9 @@ export default function TodoScreen() {
             );
           })}
         </View>
+        {hiddenCount > 0 && (
+          <Text style={styles.status}>{`Showing ${visibleTodos.length} of ${todos.length}`}</Text>
+        )}
         <FlatList
           data={visibleTodos}
           keyboardShouldPersistTaps="handled"
@@ -474,6 +478,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
+  },
+  status: {
+    marginBottom: 8,
+    opacity: 0.6,
   },
   filterSelectedText: {
     color: '#fff',
