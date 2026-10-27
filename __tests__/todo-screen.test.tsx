@@ -574,3 +574,94 @@ test('undoing a delete brings a pinned to-do back pinned, in the pinned group', 
   expect(screen.getByRole('button', { name: 'Unpin Buy bread' })).toBeOnTheScreen();
   expect(titlesInOrder()).toEqual(['Buy bread', 'Buy milk', 'Buy eggs']);
 });
+
+function checkedStates() {
+  return screen.getAllByRole('checkbox').map((box) => box.props.accessibilityState.checked);
+}
+
+test('undoes mark all done, giving each to-do its previous state and saving', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  expect(screen.getByText('Marked all done.')).toBeOnTheScreen();
+  expect(checkedStates()).toEqual([true, true, true]);
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(checkedStates()).toEqual([false, true, false]);
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved.map((t: { done: boolean }) => t.done)).toEqual([false, true, false]);
+});
+
+test('undoing mark all leaves a to-do added after it as it is', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  addTodo('Buy jam');
+
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs', 'Buy jam']);
+  expect(checkedStates()).toEqual([false, true, false, false]);
+});
+
+test('undoes mark all not done', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy eggs' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all not done' }));
+  expect(screen.getByText('Marked all not done.')).toBeOnTheScreen();
+  expect(checkedStates()).toEqual([false, false, false]);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(checkedStates()).toEqual([true, true, true]);
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved.map((t: { done: boolean }) => t.done)).toEqual([true, true, true]);
+});
+
+test('the mark all undo offer expires after 5 seconds', async () => {
+  await renderWithThree();
+  jest.useFakeTimers();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  act(() => jest.advanceTimersByTime(4999));
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
+
+  act(() => jest.advanceTimersByTime(1));
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('only the latest of a delete and a mark all can be undone', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
+  expect(screen.getByText('To-do deleted.')).toBeOnTheScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+  expect(checkedStates()).toEqual([true, true, true]);
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy eggs' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all not done' }));
+  expect(screen.getByText('Marked all not done.')).toBeOnTheScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread']);
+  expect(checkedStates()).toEqual([true, true]);
+  expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('a mark all restarts the 5 second undo timer', async () => {
+  await renderWithThree();
+  jest.useFakeTimers();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
+  act(() => jest.advanceTimersByTime(3000));
+  fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
+  act(() => jest.advanceTimersByTime(4999));
+
+  expect(screen.getByText('Marked all done.')).toBeOnTheScreen();
+});
