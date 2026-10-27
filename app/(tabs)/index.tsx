@@ -195,15 +195,18 @@ export default function TodoScreen() {
   }
 
   function saveEdit() {
+    if (editingId === null) return;
     const title = editDraft.trim();
+    if (!title) {
+      deleteTodo(editingId);
+      cancelEdit();
+      return;
+    }
     if (todos.some((t) => t.id !== editingId && sameTitle(t.title, title))) {
       setDuplicateIn('edit');
       return;
     }
-    // An empty save keeps the old text rather than blanking the to-do.
-    if (title) {
-      setTodos((current) => current.map((t) => (t.id === editingId ? { ...t, title } : t)));
-    }
+    setTodos((current) => current.map((t) => (t.id === editingId ? { ...t, title } : t)));
     cancelEdit();
   }
 
@@ -223,6 +226,7 @@ export default function TodoScreen() {
 
   function deleteTodo(id: string) {
     const index = todos.findIndex((t) => t.id === id);
+    if (index < 0) return;
     setUndo({ kind: 'delete', todo: todos[index], index });
     setTodos(todos.filter((t) => t.id !== id));
   }
