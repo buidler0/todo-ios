@@ -30,6 +30,9 @@ const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
 
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
+const sortedByTitle = (list: Todo[]) =>
+  [...list].sort((a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()));
+
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 function withUniqueIds(list: Todo[]): Todo[] {
@@ -149,6 +152,10 @@ export default function TodoScreen() {
     });
   }
 
+  function sortTodos() {
+    setTodos(sortedByTitle);
+  }
+
   function startEditing(todo: Todo) {
     setEditingId(todo.id);
     setEditDraft(todo.title);
@@ -252,6 +259,15 @@ export default function TodoScreen() {
               </Pressable>
             );
           })}
+          {canReorder && todos.length >= 2 && (
+            <Pressable
+              style={styles.filtersEnd}
+              onPress={sortTodos}
+              accessibilityRole="button"
+              hitSlop={8}>
+              <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Sort A to Z</Text>
+            </Pressable>
+          )}
         </View>
         <FlatList
           data={visibleTodos}
@@ -420,8 +436,12 @@ const styles = StyleSheet.create({
   },
   filters: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
     marginBottom: 8,
+  },
+  filtersEnd: {
+    marginLeft: 'auto',
   },
   filterButton: {
     borderWidth: 1,

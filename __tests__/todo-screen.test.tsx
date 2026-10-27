@@ -354,6 +354,58 @@ test('moving is only offered on the unfiltered, unsearched list', async () => {
   expect(screen.getByRole('button', { name: 'Move Buy bread up' })).toBeOnTheScreen();
 });
 
+test('sorts the whole list A to Z ignoring case, keeping equal titles in order, and saves it', async () => {
+  await AsyncStorage.setItem(
+    'todos',
+    JSON.stringify([
+      { id: '1', title: 'banana', done: false },
+      { id: '2', title: 'Apple', done: false },
+      { id: '3', title: 'cherry', done: true },
+      { id: '4', title: 'apple', done: true },
+      { id: '5', title: 'APPLE', done: false },
+    ])
+  );
+  render(<TodoScreen />);
+  await screen.findByRole('checkbox', { name: 'banana' });
+
+  fireEvent.press(screen.getByRole('button', { name: 'Sort A to Z' }));
+
+  expect(titlesInOrder()).toEqual(['Apple', 'apple', 'APPLE', 'banana', 'cherry']);
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toEqual([
+    { id: '2', title: 'Apple', done: false },
+    { id: '4', title: 'apple', done: true },
+    { id: '5', title: 'APPLE', done: false },
+    { id: '1', title: 'banana', done: false },
+    { id: '3', title: 'cherry', done: true },
+  ]);
+});
+
+test('sorting is only offered on the unfiltered, unsearched list of two or more', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  addTodo('Buy milk');
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  addTodo('Buy bread');
+  expect(screen.getByRole('button', { name: 'Sort A to Z' })).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'milk');
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), ' ');
+  expect(screen.getByRole('button', { name: 'Sort A to Z' })).toBeOnTheScreen();
+});
+
 test('marks every to-do done, then every to-do not done', async () => {
   await renderWithThree();
   fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
