@@ -1,0 +1,107 @@
+appId: host.exp.Exponent
+---
+- stopApp
+- openLink: exp://127.0.0.1:8097
+- runFlow:
+    when:
+      visible: "Open"
+    commands:
+      - tapOn: "Open"
+- extendedWaitUntil:
+    visible: "What needs doing?"
+    timeout: 90000
+- runFlow:
+    when:
+      visible: "Mark all done"
+    commands:
+      - tapOn: "Mark all done"
+- runFlow:
+    when:
+      visible: "Mark all not done"
+    commands:
+      - tapOn: "Clear completed"
+- assertVisible: "Nothing to do yet."
+- assertNotVisible: "Sort A to Z"
+
+- tapOn: "What needs doing?"
+- inputText: "Pack the tent, stove, map, torch and water for the long trip!"
+- assertVisible: "Pack the tent, stove, map, torch and water for the long trip!"
+- tapOn: "Add"
+- assertVisible: "Keep it to 60 characters."
+- assertVisible: "Pack the tent, stove, map, torch and water for the long trip!"
+- assertVisible: "Nothing to do yet."
+- eraseText: 1
+- assertNotVisible: "Keep it to 60 characters."
+- tapOn: "Add"
+- assertVisible: "Pack the tent, stove, map, torch and water for the long trip"
+- takeScreenshot: 1-length-add
+
+- tapOn: "What needs doing?"
+- inputText: "banana"
+- tapOn: "Add"
+- tapOn: "What needs doing?"
+- inputText: "Apple"
+- tapOn: "Add"
+- assertVisible:
+    text: "banana"
+    below: "Pack the tent, stove, map, torch and water for the long trip"
+- assertVisible:
+    text: "Apple"
+    below: "banana"
+- takeScreenshot: 2-before-sort
+- tapOn: "Sort A to Z"
+- assertVisible:
+    text: "banana"
+    below: "Apple"
+- assertVisible:
+    text: "Pack the tent, stove, map, torch and water for the long trip"
+    below: "banana"
+- takeScreenshot: 3-after-sort
+
+- tapOn: "Edit banana"
+- eraseText: 10
+- inputText: "Pack the tent, stove, map, torch and water for the long trip!"
+- tapOn: "Save"
+- assertVisible: "Keep it to 60 characters."
+- assertVisible: "Save"
+- takeScreenshot: 4-length-edit
+- eraseText: 1
+- assertNotVisible: "Keep it to 60 characters."
+- tapOn: "Cancel"
+- assertVisible: "banana"
+
+- tapOn:
+    text: "Apple"
+    index: 0
+- tapOn: "Done"
+- assertVisible: "Showing 1 of 3"
+- assertNotVisible: "Sort A to Z"
+- takeScreenshot: 5-count-done
+- tapOn: "All"
+- assertNotVisible: "Showing.*"
+- assertVisible: "Sort A to Z"
+- tapOn: "Search to-dos"
+- inputText: "ban"
+- assertVisible: "Showing 1 of 3"
+- assertNotVisible: "Sort A to Z"
+- takeScreenshot: 6-count-search
+- eraseText: 3
+- assertNotVisible: "Showing.*"
+- hideKeyboard
+
+- tapOn: "Clear completed"
+- assertVisible: "Completed to-dos cleared."
+- assertNotVisible: "Apple"
+- takeScreenshot: 7-cleared
+- tapOn: "Undo"
+- assertNotVisible: "Undo"
+- assertVisible:
+    text: "banana"
+    below: "Apple"
+- takeScreenshot: 8-undone
+- tapOn: "Clear completed"
+- assertVisible: "Undo"
+- extendedWaitUntil:
+    notVisible: "Undo"
+    timeout: 8000
+- assertNotVisible: "Apple"
