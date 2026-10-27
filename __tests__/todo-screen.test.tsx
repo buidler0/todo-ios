@@ -291,7 +291,7 @@ test('says so when the search matches nothing, and still counts every to-do', as
 test('never saves the search text', async () => {
   await renderWithThree();
 
-  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'milk');
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'zzz');
 
   const saved = await AsyncStorage.getItem('todos');
   expect(JSON.parse(saved ?? '[]')).toMatchObject([
@@ -299,7 +299,9 @@ test('never saves the search text', async () => {
     { title: 'Buy bread' },
     { title: 'Buy eggs' },
   ]);
-  expect(await AsyncStorage.getAllKeys()).toEqual(['todos']);
+  const keys = [...(await AsyncStorage.getAllKeys())].sort();
+  expect(keys).toEqual(['filter', 'todos']);
+  for (const [, value] of await AsyncStorage.multiGet(keys)) expect(value).not.toContain('zzz');
 });
 
 function titlesInOrder() {
@@ -452,6 +454,12 @@ test('a to-do can change its own title to a different case', async () => {
   expect(screen.queryByLabelText(/^Edit Buy milk$/)).toBeNull();
 });
 
+async function remount() {
+  screen.unmount();
+  render(<TodoScreen />);
+  await act(async () => {});
+}
+
 function pin(title: string) {
   fireEvent.press(screen.getByRole('button', { name: `Pin ${title}` }));
 }
@@ -488,10 +496,8 @@ test('a pinned to-do offers Unpin, and the pin is saved across a remount', async
   expect(screen.queryByRole('button', { name: 'Pin Buy bread' })).toBeNull();
   expect(screen.getByRole('button', { name: 'Pin Buy milk' })).toBeOnTheScreen();
 
-  screen.unmount();
-  render(<TodoScreen />);
+  await remount();
   await screen.findByRole('button', { name: 'Unpin Buy bread' });
-  await act(async () => {});
   expect(titlesInOrder()).toEqual(['Buy bread', 'Buy milk', 'Buy eggs']);
 });
 
@@ -627,4 +633,42 @@ test('a mark all replaces a pending delete undo', async () => {
   expect(screen.getByRole('checkbox', { name: 'Buy bread' })).not.toBeChecked();
   expect(screen.getByRole('checkbox', { name: 'Buy eggs' })).not.toBeChecked();
   expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+});
+
+test('the selected filter is saved and selected again on the next launch', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+
+  await remount();
+
+  await screen.findByRole('button', { name: 'Done' });
+  expect(screen.getByRole('button', { name: 'Done' })).toBeSelected();
+  expect(titlesInOrder()).toEqual(['Buy bread']);
+});
+
+test.each(['toString', 'nope'])('a garbage saved filter %j loads as All', async (garbage) => {
+  await AsyncStorage.multiSet([
+    ['todos', JSON.stringify([{ id: '1', title: 'Buy milk', done: false, pinned: false }])],
+    ['filter', garbage],
+  ]);
+  render(<TodoScreen />);
+
+  await screen.findByRole('checkbox', { name: 'Buy milk' });
+  await act(async () => {});
+  expect(screen.getByRole('button', { name: 'All' })).toBeSelected();
+});
+
+test('a to-do added and a filter tapped before the first load finishes survive it', async () => {
+  render(<TodoScreen />);
+
+  addTodo('Buy milk');
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  await act(async () => {});
+
+  expect(screen.getByRole('checkbox', { name: 'Buy milk' })).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Active' })).toBeSelected();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved.map((t: { title: string }) => t.title)).toEqual(['Buy milk']);
+  expect(await AsyncStorage.getItem('filter')).toBe('Active');
 });

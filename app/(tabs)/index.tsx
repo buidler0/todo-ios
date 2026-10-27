@@ -15,6 +15,7 @@ import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
 
 const STORAGE_KEY = 'todos';
+const FILTER_KEY = 'filter';
 const UNDO_MS = 5000;
 
 type Todo = { id: string; title: string; done: boolean; pinned: boolean };
@@ -28,6 +29,10 @@ const FILTERS: Record<Filter, (t: Todo) => boolean> = {
   Done: (t) => t.done,
 };
 const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
+
+function parseFilter(raw: string): Filter {
+  return FILTER_NAMES.find((name) => name === raw) ?? 'All';
+}
 
 type Undo =
   | { kind: 'delete'; todo: Todo; index: number }
@@ -53,8 +58,7 @@ function withUniqueIds<T extends { id: string }>(list: T[]): T[] {
   });
 }
 
-function fromSaved(raw: string | null): Todo[] {
-  if (!raw) return [];
+function fromSaved(raw: string): Todo[] {
   return withUniqueIds<SavedTodo>(JSON.parse(raw)).map((t) => ({ ...t, pinned: t.pinned === true }));
 }
 
@@ -115,8 +119,9 @@ export default function TodoScreen() {
   const [windowY, setWindowY] = useState(0);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((saved) => {
-      setTodos(fromSaved(saved));
+    AsyncStorage.multiGet([STORAGE_KEY, FILTER_KEY]).then(([[, savedTodos], [, savedFilter]]) => {
+      if (savedTodos) setTodos(fromSaved(savedTodos));
+      if (savedFilter) setFilter(parseFilter(savedFilter));
       setLoaded(true);
     });
   }, []);
@@ -125,6 +130,10 @@ export default function TodoScreen() {
     // Skip the first render so the empty initial list never overwrites saved to-dos.
     if (loaded) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   }, [todos, loaded]);
+
+  useEffect(() => {
+    if (loaded) AsyncStorage.setItem(FILTER_KEY, filter);
+  }, [filter, loaded]);
 
   const term = query.trim().toLowerCase();
   const visibleTodos = pinnedFirst(
