@@ -74,6 +74,12 @@ function validateTitle(
   return null;
 }
 
+function byTitle(a: Todo, b: Todo): number {
+  const x = a.title.toLowerCase();
+  const y = b.title.toLowerCase();
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
 function removeWhere(
   list: Todo[],
   matches: (t: Todo) => boolean
@@ -160,6 +166,7 @@ export default function TodoScreen() {
     .filter((t) => t.title.toLowerCase().includes(term));
   // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
   const canReorder = filter === 'All' && !term;
+  const canSort = canReorder && todos.length >= 2;
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
@@ -211,6 +218,10 @@ export default function TodoScreen() {
       [next[from], next[to]] = [next[to], next[from]];
       return next;
     });
+  }
+
+  function sortList() {
+    setTodos((current) => [...current].sort(byTitle));
   }
 
   function startEditing(todo: Todo) {
@@ -320,6 +331,15 @@ export default function TodoScreen() {
               </Pressable>
             );
           })}
+          {canSort && (
+            <Pressable
+              style={styles.sortButton}
+              onPress={sortList}
+              accessibilityRole="button"
+              hitSlop={8}>
+              <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Sort A to Z</Text>
+            </Pressable>
+          )}
         </View>
         <FlatList
           data={visibleTodos}
@@ -497,6 +517,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
+  },
+  sortButton: {
+    marginLeft: 'auto',
+    alignSelf: 'center',
   },
   filterSelectedText: {
     color: '#fff',

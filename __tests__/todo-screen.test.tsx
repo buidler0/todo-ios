@@ -607,3 +607,62 @@ test('a refusal in one field replaces the other field message', async () => {
   expect(screen.getByText('Already on the list.')).toBeOnTheScreen();
   expect(screen.queryByText(TOO_LONG)).toBeNull();
 });
+
+test('sorts the list A to Z ignoring case and saves the order', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('pear');
+  addTodo('Banana');
+  addTodo('apple');
+  fireEvent.press(screen.getByRole('checkbox', { name: 'pear' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Sort A to Z' }));
+
+  expect(titlesInOrder()).toEqual(['apple', 'Banana', 'pear']);
+  expect(screen.getByRole('checkbox', { name: 'pear' })).toBeChecked();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([{ title: 'apple' }, { title: 'Banana' }, { title: 'pear', done: true }]);
+});
+
+test('sorting keeps equal titles in their old order', async () => {
+  await AsyncStorage.setItem(
+    'todos',
+    JSON.stringify([
+      { id: '1', title: 'b', done: false },
+      { id: '2', title: 'A', done: false },
+      { id: '3', title: 'a', done: false },
+    ])
+  );
+  render(<TodoScreen />);
+
+  fireEvent.press(await screen.findByRole('button', { name: 'Sort A to Z' }));
+
+  expect(titlesInOrder()).toEqual(['A', 'a', 'b']);
+});
+
+test('Sort is only offered on the unfiltered, unsearched list', async () => {
+  await renderWithThree();
+  expect(screen.getByRole('button', { name: 'Sort A to Z' })).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'buy');
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), '  ');
+  expect(screen.getByRole('button', { name: 'Sort A to Z' })).toBeOnTheScreen();
+});
+
+test('Sort is hidden until the list has two to-dos', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  addTodo('Buy milk');
+  expect(screen.queryByRole('button', { name: 'Sort A to Z' })).toBeNull();
+
+  addTodo('Buy bread');
+  expect(screen.getByRole('button', { name: 'Sort A to Z' })).toBeOnTheScreen();
+});
