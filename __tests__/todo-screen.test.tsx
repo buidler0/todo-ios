@@ -302,6 +302,41 @@ test('never saves the search text', async () => {
   expect(await AsyncStorage.getAllKeys()).toEqual(['todos']);
 });
 
+test('shows how many to-dos the filter or search leaves visible', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.getByText('Showing 2 of 3')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.getByText('Showing 1 of 3')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'milk');
+  expect(screen.getByText('Showing 1 of 3')).toBeOnTheScreen();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'zzz');
+  expect(screen.getByText('Showing 0 of 3')).toBeOnTheScreen();
+});
+
+test('shows no count when nothing is hidden', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  expect(screen.queryByText(/^Showing/)).toBeNull();
+
+  addTodo('Buy milk');
+  addTodo('Buy bread');
+  expect(screen.queryByText(/^Showing/)).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.queryByText(/^Showing/)).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'buy');
+  expect(screen.queryByText(/^Showing/)).toBeNull();
+});
+
 function titlesInOrder() {
   return screen.getAllByRole('checkbox').map((box) => box.props.accessibilityLabel);
 }
