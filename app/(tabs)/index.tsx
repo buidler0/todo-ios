@@ -14,6 +14,8 @@ export default function TodoScreen() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [draft, setDraft] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
 
@@ -38,6 +40,20 @@ export default function TodoScreen() {
 
   function toggleTodo(id: string) {
     setTodos((current) => current.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+  }
+
+  function startEditing(todo: Todo) {
+    setEditingId(todo.id);
+    setEditDraft(todo.title);
+  }
+
+  function saveEdit() {
+    const title = editDraft.trim();
+    // An empty save keeps the old text rather than blanking the to-do.
+    if (title) {
+      setTodos((current) => current.map((t) => (t.id === editingId ? { ...t, title } : t)));
+    }
+    setEditingId(null);
   }
 
   function deleteTodo(id: string) {
@@ -67,17 +83,46 @@ export default function TodoScreen() {
         data={todos}
         keyExtractor={(t) => t.id}
         ListEmptyComponent={<Text style={styles.empty}>Nothing to do yet.</Text>}
-        renderItem={({ item }) => (
+        renderItem={({ item }) =>
+          item.id === editingId ? (
+            <View style={styles.row}>
+              <TextInput
+                style={[styles.input, { color: textColor }]}
+                value={editDraft}
+                onChangeText={setEditDraft}
+                onSubmitEditing={saveEdit}
+                returnKeyType="done"
+                autoFocus
+                accessibilityLabel={`Edit ${item.title}`}
+              />
+              <View style={styles.editActions}>
+                <Pressable onPress={saveEdit} accessibilityRole="button" hitSlop={8}>
+                  <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Save</Text>
+                </Pressable>
+                <Pressable onPress={() => setEditingId(null)} accessibilityRole="button" hitSlop={8}>
+                  <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Cancel</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
           <View style={styles.row}>
-            <Pressable
-              style={styles.rowMain}
-              onPress={() => toggleTodo(item.id)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: item.done }}
-              accessibilityLabel={item.title}>
-              <Text style={styles.check}>{item.done ? '☑' : '☐'}</Text>
-              <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
-            </Pressable>
+            <View style={styles.rowMain}>
+              <Pressable
+                onPress={() => toggleTodo(item.id)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: item.done }}
+                accessibilityLabel={item.title}
+                hitSlop={8}>
+                <Text style={styles.check}>{item.done ? '☑' : '☐'}</Text>
+              </Pressable>
+              <Pressable
+                style={styles.titlePress}
+                onPress={() => startEditing(item)}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit ${item.title}`}>
+                <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
+              </Pressable>
+            </View>
             <Pressable
               onPress={() => deleteTodo(item.id)}
               accessibilityRole="button"
@@ -86,7 +131,8 @@ export default function TodoScreen() {
               <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Delete</Text>
             </Pressable>
           </View>
-        )}
+          )
+        }
       />
     </View>
   );
@@ -138,6 +184,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  titlePress: {
+    flex: 1,
+  },
+  editActions: {
+    flexDirection: 'row',
+    gap: 16,
+    marginLeft: 12,
   },
   check: {
     fontSize: 22,
