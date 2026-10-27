@@ -175,6 +175,18 @@ describe('undo delete', () => {
     expect(shownTitles()).toEqual(['Walk dog', 'Pay rent']);
   });
 
+  test('puts a to-do back before the first later one left after clearing completed ones', async () => {
+    await renderWith('Buy milk', 'Walk dog', 'Pay rent', 'Call mum');
+    fireEvent.press(screen.getByRole('checkbox', { name: 'Pay rent' }));
+
+    fireEvent.press(screen.getByRole('button', { name: 'Delete Walk dog' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+    expect(shownTitles()).toEqual(['Buy milk', 'Call mum']);
+
+    fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+    expect(shownTitles()).toEqual(['Buy milk', 'Walk dog', 'Call mum']);
+  });
+
   test('disappears after 5 seconds', async () => {
     await renderWith('Buy milk');
     fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
