@@ -380,3 +380,74 @@ test('offers no mark-all button on an empty list', async () => {
 
   expect(screen.queryByRole('button', { name: /^Mark all/ })).toBeNull();
 });
+
+test('refuses a duplicate add, keeps the draft, and clears the message on typing', async () => {
+  await renderWithThree();
+  expect(screen.queryByText('Already on the list.')).toBeNull();
+
+  addTodo('  BUY MILK ');
+
+  expect(screen.getByText('Already on the list.')).toBeOnTheScreen();
+  expect(screen.getByPlaceholderText('What needs doing?').props.value).toBe('  BUY MILK ');
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toHaveLength(3);
+
+  fireEvent.changeText(screen.getByPlaceholderText('What needs doing?'), 'Buy milk 2');
+  expect(screen.queryByText('Already on the list.')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Add' }));
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs', 'Buy milk 2']);
+});
+
+test('refuses an edit that duplicates another to-do and stays in editing', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), ' buy EGGS');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(screen.getByText('Already on the list.')).toBeOnTheScreen();
+  expect(screen.getByLabelText('Edit Buy bread')).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Save' })).toBeOnTheScreen();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([
+    { title: 'Buy milk' },
+    { title: 'Buy bread' },
+    { title: 'Buy eggs' },
+  ]);
+
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'Buy rye');
+  expect(screen.queryByText('Already on the list.')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  expect(screen.getByText('Buy rye')).toBeOnTheScreen();
+});
+
+test('the edit duplicate message goes away on cancel or when another edit starts', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'Buy milk');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.queryByText('Already on the list.')).toBeNull();
+  expect(screen.getByText('Buy bread')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'Buy milk');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy eggs' }));
+  expect(screen.queryByText('Already on the list.')).toBeNull();
+  expect(screen.getByLabelText('Edit Buy eggs').props.value).toBe('Buy eggs');
+});
+
+test('a to-do can change its own title to a different case', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy milk'), 'BUY MILK');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(screen.queryByText('Already on the list.')).toBeNull();
+  expect(screen.getByText('BUY MILK')).toBeOnTheScreen();
+  expect(screen.queryByLabelText(/^Edit Buy milk$/)).toBeNull();
+});
