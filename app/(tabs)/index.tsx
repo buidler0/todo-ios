@@ -11,7 +11,7 @@ const UNDO_MS = 5000;
 
 type Todo = { id: string; title: string; done: boolean };
 type Filter = 'All' | 'Active' | 'Done';
-type Deleted = { todo: Todo; index: number };
+type Deleted = { todo: Todo; nextId: string | null };
 
 const FILTERS: Record<Filter, { shows: (todo: Todo) => boolean; empty: string }> = {
   All: { shows: () => true, empty: 'Nothing to do yet.' },
@@ -95,14 +95,19 @@ export default function TodoScreen() {
 
   function deleteTodo(id: string) {
     const index = todos.findIndex((t) => t.id === id);
-    setLastDeleted({ todo: todos[index], index });
+    if (index < 0) return;
+    setLastDeleted({ todo: todos[index], nextId: todos[index + 1]?.id ?? null });
     setTodos((current) => current.filter((t) => t.id !== id));
   }
 
   function undoDelete() {
     if (!lastDeleted) return;
-    const { todo, index } = lastDeleted;
-    setTodos((current) => [...current.slice(0, index), todo, ...current.slice(index)]);
+    const { todo, nextId } = lastDeleted;
+    setTodos((current) => {
+      const index = current.findIndex((t) => t.id === nextId);
+      if (index < 0) return [...current, todo];
+      return [...current.slice(0, index), todo, ...current.slice(index)];
+    });
     setLastDeleted(null);
   }
 
