@@ -1,5 +1,5 @@
 # To-do (iOS)
-A one-screen iOS to-do app (add, tick done, edit, delete with undo, filter by All/Active/Done, count what's left, clear completed, kept between launches) built by a crew of coding agents as a practice app. Expo SDK 54 + Expo Router + TypeScript.
+A one-screen iOS to-do app (add, tick done, edit, delete or clear completed with undo, filter by All/Active/Done, sort A to Z, count what's left, titles up to 60 characters, kept between launches) built by a crew of coding agents as a practice app. Expo SDK 54 + Expo Router + TypeScript.
 
 Stage: prototype · Works: yes (checked 2026-10-26) · Next: try add, tick, edit and delete on the simulator · Decide by: 2026-11-23
 Why: a small, real app for practising agent-driven development with firstmate and no-mistakes.
@@ -8,6 +8,7 @@ Why: a small, real app for practising agent-driven development with firstmate an
 npm install
 npm test                 # Jest: every list action, including filter, clear completed and undo
 npx expo start --ios     # opens in Expo Go on the iOS simulator
+maestro test .maestro/four-tools.yaml   # taps through sort, view count, undo clear and the length limit; needs Metro on port 8097 (npx expo start --port 8097) and Expo Go open in a simulator; not part of npm test
 
 The screen is `app/(tabs)/index.tsx`; the list is saved with AsyncStorage on every change.
 `--ios` needs Xcode's Simulator app; without it, boot a simulator and run `npx expo start`, then open `exp://127.0.0.1:8081` in Expo Go.
