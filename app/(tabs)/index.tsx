@@ -28,6 +28,8 @@ const FILTERS: Record<Filter, (t: Todo) => boolean> = {
 };
 const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
 
+const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 function withUniqueIds(list: Todo[]): Todo[] {
@@ -73,6 +75,7 @@ export default function TodoScreen() {
   const [editDraft, setEditDraft] = useState('');
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
+  const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
   const [lastDeleted, setLastDeleted] = useState<{ todo: Todo; index: number } | null>(null);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
@@ -106,9 +109,27 @@ export default function TodoScreen() {
     return () => clearTimeout(timer);
   }, [lastDeleted]);
 
+  function clearDuplicate(source: 'add' | 'edit') {
+    setDuplicateIn((current) => (current === source ? null : current));
+  }
+
+  function changeDraft(text: string) {
+    setDraft(text);
+    clearDuplicate('add');
+  }
+
+  function changeEditDraft(text: string) {
+    setEditDraft(text);
+    clearDuplicate('edit');
+  }
+
   function addTodo() {
     const title = draft.trim();
     if (!title) return;
+    if (todos.some((t) => sameTitle(t.title, title))) {
+      setDuplicateIn('add');
+      return;
+    }
     setTodos((current) => [...current, { id: newId(), title, done: false }]);
     setDraft('');
   }
@@ -131,15 +152,25 @@ export default function TodoScreen() {
   function startEditing(todo: Todo) {
     setEditingId(todo.id);
     setEditDraft(todo.title);
+    clearDuplicate('edit');
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    clearDuplicate('edit');
   }
 
   function saveEdit() {
     const title = editDraft.trim();
+    if (todos.some((t) => t.id !== editingId && sameTitle(t.title, title))) {
+      setDuplicateIn('edit');
+      return;
+    }
     // An empty save keeps the old text rather than blanking the to-do.
     if (title) {
       setTodos((current) => current.map((t) => (t.id === editingId ? { ...t, title } : t)));
     }
-    setEditingId(null);
+    cancelEdit();
   }
 
   function markAll(done: boolean) {
@@ -174,22 +205,25 @@ export default function TodoScreen() {
         ref={contentRef}
         style={styles.container}
         onLayout={() => contentRef.current?.measureInWindow((_x, y) => setWindowY(y))}>
-        <View style={styles.inputRow}>
-          <TextInput
-            style={[styles.input, { color: textColor }]}
-            placeholder="What needs doing?"
-            placeholderTextColor="#999"
-            value={draft}
-            onChangeText={setDraft}
-            onSubmitEditing={addTodo}
-            returnKeyType="done"
-          />
-          <Pressable
-            style={[styles.addButton, { backgroundColor: Colors.light.tint }]}
-            onPress={addTodo}
-            accessibilityRole="button">
-            <Text style={styles.addButtonText}>Add</Text>
-          </Pressable>
+        <View style={styles.addSection}>
+          <View style={styles.inputRow}>
+            <TextInput
+              style={[styles.input, { color: textColor }]}
+              placeholder="What needs doing?"
+              placeholderTextColor="#999"
+              value={draft}
+              onChangeText={changeDraft}
+              onSubmitEditing={addTodo}
+              returnKeyType="done"
+            />
+            <Pressable
+              style={[styles.addButton, { backgroundColor: Colors.light.tint }]}
+              onPress={addTodo}
+              accessibilityRole="button">
+              <Text style={styles.addButtonText}>Add</Text>
+            </Pressable>
+          </View>
+          {duplicateIn === 'add' && <Text style={styles.duplicate}>Already on the list.</Text>}
         </View>
         <TextInput
           style={[styles.input, styles.search, { color: textColor }]}
@@ -234,24 +268,27 @@ export default function TodoScreen() {
           }
           renderItem={({ item, index }) =>
             item.id === editingId ? (
-              <View style={styles.row}>
-                <TextInput
-                  style={[styles.input, { color: textColor }]}
-                  value={editDraft}
-                  onChangeText={setEditDraft}
-                  onSubmitEditing={saveEdit}
-                  returnKeyType="done"
-                  autoFocus
-                  accessibilityLabel={`Edit ${item.title}`}
-                />
-                <View style={styles.editActions}>
-                  <Pressable onPress={saveEdit} accessibilityRole="button" hitSlop={8}>
-                    <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Save</Text>
-                  </Pressable>
-                  <Pressable onPress={() => setEditingId(null)} accessibilityRole="button" hitSlop={8}>
-                    <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Cancel</Text>
-                  </Pressable>
+              <View>
+                <View style={styles.row}>
+                  <TextInput
+                    style={[styles.input, { color: textColor }]}
+                    value={editDraft}
+                    onChangeText={changeEditDraft}
+                    onSubmitEditing={saveEdit}
+                    returnKeyType="done"
+                    autoFocus
+                    accessibilityLabel={`Edit ${item.title}`}
+                  />
+                  <View style={styles.editActions}>
+                    <Pressable onPress={saveEdit} accessibilityRole="button" hitSlop={8}>
+                      <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Save</Text>
+                    </Pressable>
+                    <Pressable onPress={cancelEdit} accessibilityRole="button" hitSlop={8}>
+                      <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Cancel</Text>
+                    </Pressable>
+                  </View>
                 </View>
+                {duplicateIn === 'edit' && <Text style={styles.duplicate}>Already on the list.</Text>}
               </View>
             ) : (
             <View style={styles.row}>
@@ -342,10 +379,16 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
+  addSection: {
+    marginBottom: 16,
+  },
   inputRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 16,
+  },
+  duplicate: {
+    color: '#c0392b',
+    marginTop: 6,
   },
   input: {
     flex: 1,
