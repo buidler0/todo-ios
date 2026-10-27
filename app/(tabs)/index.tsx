@@ -46,6 +46,7 @@ export default function TodoScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [filter, setFilter] = useState<Filter>('All');
+  const [query, setQuery] = useState('');
   const [lastDeleted, setLastDeleted] = useState<{ todo: Todo; index: number } | null>(null);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
@@ -65,7 +66,10 @@ export default function TodoScreen() {
     if (loaded) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   }, [todos, loaded]);
 
-  const visibleTodos = todos.filter(FILTERS[filter]);
+  const term = query.trim().toLowerCase();
+  const visibleTodos = todos
+    .filter(FILTERS[filter])
+    .filter((t) => t.title.toLowerCase().includes(term));
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
@@ -144,6 +148,16 @@ export default function TodoScreen() {
             <Text style={styles.addButtonText}>Add</Text>
           </Pressable>
         </View>
+        <TextInput
+          style={[styles.input, styles.search, { color: textColor }]}
+          placeholder="Search to-dos"
+          placeholderTextColor="#999"
+          value={query}
+          onChangeText={setQuery}
+          autoCorrect={false}
+          returnKeyType="search"
+          clearButtonMode="while-editing"
+        />
         <View style={styles.filters}>
           {FILTER_NAMES.map((name) => {
             const selected = name === filter;
@@ -168,7 +182,11 @@ export default function TodoScreen() {
           keyExtractor={(t) => t.id}
           ListEmptyComponent={
             <Text style={styles.empty}>
-              {todos.length ? `No ${filter.toLowerCase()} to-dos.` : 'Nothing to do yet.'}
+              {term
+                ? 'No matching to-dos.'
+                : todos.length
+                  ? `No ${filter.toLowerCase()} to-dos.`
+                  : 'Nothing to do yet.'}
             </Text>
           }
           renderItem={({ item }) =>
@@ -281,6 +299,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 32,
     opacity: 0.6,
+  },
+  search: {
+    flex: 0,
+    marginBottom: 8,
   },
   filters: {
     flexDirection: 'row',
