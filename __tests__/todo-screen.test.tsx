@@ -451,3 +451,126 @@ test('a to-do can change its own title to a different case', async () => {
   expect(screen.getByText('BUY MILK')).toBeOnTheScreen();
   expect(screen.queryByLabelText(/^Edit Buy milk$/)).toBeNull();
 });
+
+test('pins and unpins a to-do, and the button name follows', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy bread' }));
+
+  expect(screen.queryByRole('button', { name: 'Pin Buy bread' })).toBeNull();
+  expect(screen.getByRole('button', { name: 'Unpin Buy bread' })).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Pin Buy milk' })).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Unpin Buy bread' }));
+  expect(screen.getByRole('button', { name: 'Pin Buy bread' })).toBeOnTheScreen();
+});
+
+test('pinned to-dos show first in every view, each group in list order', async () => {
+  await renderWithThree();
+  addTodo('Buy jam');
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy eggs' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy milk' }));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy eggs', 'Buy bread', 'Buy jam']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(titlesInOrder()).toEqual(['Buy eggs', 'Buy jam']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'buy');
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy eggs', 'Buy bread', 'Buy jam']);
+
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'JAM');
+  expect(titlesInOrder()).toEqual(['Buy jam']);
+});
+
+test('pins can be changed in a filtered view', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy eggs' }));
+
+  expect(titlesInOrder()).toEqual(['Buy eggs', 'Buy milk', 'Buy bread']);
+});
+
+test('saves pins and shows them again after a relaunch', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy eggs' }));
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([
+    { title: 'Buy milk', pinned: false },
+    { title: 'Buy bread', pinned: false },
+    { title: 'Buy eggs', pinned: true },
+  ]);
+
+  screen.unmount();
+  render(<TodoScreen />);
+  await screen.findByRole('button', { name: 'Unpin Buy eggs' });
+
+  expect(titlesInOrder()).toEqual(['Buy eggs', 'Buy milk', 'Buy bread']);
+});
+
+test('a saved list without pins loads unpinned', async () => {
+  await AsyncStorage.setItem(
+    'todos',
+    JSON.stringify([
+      { id: '1', title: 'Buy milk', done: false },
+      { id: '2', title: 'Buy bread', done: true },
+    ])
+  );
+  render(<TodoScreen />);
+
+  await screen.findByRole('button', { name: 'Pin Buy milk' });
+  expect(screen.getByRole('button', { name: 'Pin Buy bread' })).toBeOnTheScreen();
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread']);
+});
+
+test('move buttons swap only within a pin group', async () => {
+  await renderWithThree();
+  addTodo('Buy jam');
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy bread' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy jam' }));
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy jam', 'Buy milk', 'Buy eggs']);
+
+  expect(screen.getByRole('button', { name: 'Move Buy bread up' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Move Buy bread down' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Move Buy jam up' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Move Buy jam down' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Move Buy milk up' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Move Buy milk down' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Move Buy eggs up' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Move Buy eggs down' })).toBeDisabled();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Move Buy eggs up' }));
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy jam', 'Buy eggs', 'Buy milk']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Move Buy bread down' }));
+  expect(titlesInOrder()).toEqual(['Buy jam', 'Buy bread', 'Buy eggs', 'Buy milk']);
+});
+
+test('unpinning puts a to-do back in its old place', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy eggs' }));
+  expect(titlesInOrder()).toEqual(['Buy eggs', 'Buy milk', 'Buy bread']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Unpin Buy eggs' }));
+
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+});
+
+test('undoing a delete brings a pinned to-do back pinned, in the pinned group', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy bread' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy bread' }));
+  expect(screen.queryByText('Buy bread')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+  expect(screen.getByRole('button', { name: 'Unpin Buy bread' })).toBeOnTheScreen();
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy milk', 'Buy eggs']);
+});
