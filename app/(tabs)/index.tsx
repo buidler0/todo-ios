@@ -10,6 +10,15 @@ const STORAGE_KEY = 'todos';
 
 type Todo = { id: string; title: string; done: boolean };
 
+type Filter = 'All' | 'Active' | 'Done';
+
+const FILTERS: Record<Filter, (t: Todo) => boolean> = {
+  All: () => true,
+  Active: (t) => !t.done,
+  Done: (t) => t.done,
+};
+const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
+
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 function withUniqueIds(list: Todo[]): Todo[] {
@@ -27,6 +36,7 @@ export default function TodoScreen() {
   const [draft, setDraft] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  const [filter, setFilter] = useState<Filter>('All');
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
 
@@ -42,6 +52,7 @@ export default function TodoScreen() {
     if (loaded) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   }, [todos, loaded]);
 
+  const visibleTodos = todos.filter(FILTERS[filter]);
   const remaining = todos.filter((t) => !t.done).length;
 
   function addTodo() {
@@ -92,11 +103,33 @@ export default function TodoScreen() {
           <Text style={styles.addButtonText}>Add</Text>
         </Pressable>
       </View>
+      <View style={styles.filters}>
+        {FILTER_NAMES.map((name) => {
+          const selected = name === filter;
+          return (
+            <Pressable
+              key={name}
+              style={[
+                styles.filterButton,
+                selected && { backgroundColor: Colors.light.tint },
+              ]}
+              onPress={() => setFilter(name)}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}>
+              <Text style={selected && styles.filterSelectedText}>{name}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
       <FlatList
-        data={todos}
+        data={visibleTodos}
         keyboardShouldPersistTaps="handled"
         keyExtractor={(t) => t.id}
-        ListEmptyComponent={<Text style={styles.empty}>Nothing to do yet.</Text>}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            {todos.length ? `No ${filter.toLowerCase()} to-dos.` : 'Nothing to do yet.'}
+          </Text>
+        }
         renderItem={({ item }) =>
           item.id === editingId ? (
             <View style={styles.row}>
@@ -190,6 +223,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 32,
     opacity: 0.6,
+  },
+  filters: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  filterButton: {
+    borderWidth: 1,
+    borderColor: Colors.light.tint,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  filterSelectedText: {
+    color: '#fff',
   },
   footer: {
     flexDirection: 'row',
