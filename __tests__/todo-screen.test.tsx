@@ -169,3 +169,20 @@ test('adds a to-do while Done is selected without changing the filter', async ()
   fireEvent.press(screen.getByRole('button', { name: 'All' }));
   expect(screen.getByRole('checkbox', { name: 'Buy milk' })).not.toBeChecked();
 });
+
+test('clears completed to-dos and saves the rest', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('Buy milk');
+  addTodo('Buy bread');
+  expect(screen.queryByRole('button', { name: 'Clear completed' })).toBeNull();
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Clear completed' }));
+
+  expect(screen.queryByText('Buy milk')).toBeNull();
+  expect(screen.getByText('Buy bread')).toBeOnTheScreen();
+  expect(screen.queryByRole('button', { name: 'Clear completed' })).toBeNull();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([{ title: 'Buy bread', done: false }]);
+});

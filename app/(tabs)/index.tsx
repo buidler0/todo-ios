@@ -80,6 +80,10 @@ export default function TodoScreen() {
     setEditingId(null);
   }
 
+  function clearCompleted() {
+    setTodos((current) => current.filter((t) => !t.done));
+  }
+
   function deleteTodo(id: string) {
     setTodos((current) => current.filter((t) => t.id !== id));
   }
@@ -184,6 +188,11 @@ export default function TodoScreen() {
       {todos.length > 0 && (
         <View style={styles.footer}>
           <Text>{`${remaining} ${remaining === 1 ? 'item' : 'items'} left`}</Text>
+          {remaining < todos.length && (
+            <Pressable onPress={clearCompleted} accessibilityRole="button" hitSlop={8}>
+              <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Clear completed</Text>
+            </Pressable>
+          )}
         </View>
       )}
     </View>
