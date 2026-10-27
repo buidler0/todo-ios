@@ -116,3 +116,56 @@ test('counts the to-dos still left', async () => {
   fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
   expect(screen.getByText('0 items left')).toBeOnTheScreen();
 });
+
+test('filters the list by active and done', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  expect(screen.getByRole('button', { name: 'All' })).toBeSelected();
+  expect(screen.getByRole('button', { name: 'Active' })).not.toBeSelected();
+  expect(screen.getByRole('button', { name: 'Done' })).not.toBeSelected();
+
+  addTodo('Buy milk');
+  addTodo('Buy bread');
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.getByRole('button', { name: 'Active' })).toBeSelected();
+  expect(screen.getByRole('button', { name: 'All' })).not.toBeSelected();
+  expect(screen.getByText('Buy bread')).toBeOnTheScreen();
+  expect(screen.queryByText('Buy milk')).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.getByText('Buy milk')).toBeOnTheScreen();
+  expect(screen.queryByText('Buy bread')).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  expect(screen.getByText('Buy milk')).toBeOnTheScreen();
+  expect(screen.getByText('Buy bread')).toBeOnTheScreen();
+});
+
+test('says so when a filter matches nothing', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('Buy milk');
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(screen.getByText('No done to-dos.')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(screen.getByText('No active to-dos.')).toBeOnTheScreen();
+});
+
+test('adds a to-do while Done is selected without changing the filter', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+
+  addTodo('Buy milk');
+
+  expect(screen.getByRole('button', { name: 'Done' })).toBeSelected();
+  expect(screen.getByText('1 item left')).toBeOnTheScreen();
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  expect(screen.getByRole('checkbox', { name: 'Buy milk' })).not.toBeChecked();
+});
