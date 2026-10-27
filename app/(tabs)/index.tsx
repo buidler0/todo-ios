@@ -19,6 +19,9 @@ const UNDO_MS = 5000;
 
 type Todo = { id: string; title: string; done: boolean };
 
+// Entries are in ascending list order, so reinserting them in turn restores each old position.
+type Removal = { entries: { todo: Todo; index: number }[]; message: string };
+
 type Filter = 'All' | 'Active' | 'Done';
 
 const FILTERS: Record<Filter, (t: Todo) => boolean> = {
@@ -79,7 +82,7 @@ export default function TodoScreen() {
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
-  const [lastDeleted, setLastDeleted] = useState<{ todo: Todo; index: number } | null>(null);
+  const [lastRemoved, setLastRemoved] = useState<Removal | null>(null);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
   const backgroundColor = useThemeColor({}, 'background');
@@ -108,10 +111,10 @@ export default function TodoScreen() {
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
-    if (!lastDeleted) return;
-    const timer = setTimeout(() => setLastDeleted(null), UNDO_MS);
+    if (!lastRemoved) return;
+    const timer = setTimeout(() => setLastRemoved(null), UNDO_MS);
     return () => clearTimeout(timer);
-  }, [lastDeleted]);
+  }, [lastRemoved]);
 
   function clearDuplicate(source: 'add' | 'edit') {
     setDuplicateIn((current) => (current === source ? null : current));
@@ -186,21 +189,26 @@ export default function TodoScreen() {
   }
 
   function clearCompleted() {
-    setTodos((current) => current.filter((t) => !t.done));
-    setLastDeleted(null);
+    const entries = todos.flatMap((todo, index) => (todo.done ? [{ todo, index }] : []));
+    setLastRemoved({ entries, message: 'Completed to-dos cleared.' });
+    setTodos(todos.filter((t) => !t.done));
   }
 
   function deleteTodo(id: string) {
     const index = todos.findIndex((t) => t.id === id);
-    setLastDeleted({ todo: todos[index], index });
+    setLastRemoved({ entries: [{ todo: todos[index], index }], message: 'To-do deleted.' });
     setTodos(todos.filter((t) => t.id !== id));
   }
 
-  function undoDelete() {
-    if (!lastDeleted) return;
-    const { todo, index } = lastDeleted;
-    setTodos((current) => [...current.slice(0, index), todo, ...current.slice(index)]);
-    setLastDeleted(null);
+  function undoRemoval() {
+    if (!lastRemoved) return;
+    const { entries } = lastRemoved;
+    setTodos((current) => {
+      const next = [...current];
+      for (const { todo, index } of entries) next.splice(index, 0, todo);
+      return next;
+    });
+    setLastRemoved(null);
   }
 
   return (
@@ -380,10 +388,10 @@ export default function TodoScreen() {
             </View>
           </View>
         )}
-        {lastDeleted && (
+        {lastRemoved && (
           <View style={styles.undoBar}>
-            <Text>To-do deleted.</Text>
-            <Pressable onPress={undoDelete} accessibilityRole="button" hitSlop={8}>
+            <Text>{lastRemoved.message}</Text>
+            <Pressable onPress={undoRemoval} accessibilityRole="button" hitSlop={8}>
               <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Undo</Text>
             </Pressable>
           </View>
