@@ -142,6 +142,10 @@ export default function TodoScreen() {
     setEditingId(null);
   }
 
+  function markAll(done: boolean) {
+    setTodos((current) => current.map((t) => ({ ...t, done })));
+  }
+
   function clearCompleted() {
     setTodos((current) => current.filter((t) => !t.done));
     setLastDeleted(null);
@@ -300,11 +304,21 @@ export default function TodoScreen() {
         {todos.length > 0 && (
           <View style={styles.footer}>
             <Text>{`${remaining} ${remaining === 1 ? 'item' : 'items'} left`}</Text>
-            {remaining < todos.length && (
-              <Pressable onPress={clearCompleted} accessibilityRole="button" hitSlop={8}>
-                <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Clear completed</Text>
+            <View style={styles.footerActions}>
+              <Pressable
+                onPress={() => markAll(remaining > 0)}
+                accessibilityRole="button"
+                hitSlop={8}>
+                <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>
+                  {remaining > 0 ? 'Mark all done' : 'Mark all not done'}
+                </Text>
               </Pressable>
-            )}
+              {remaining < todos.length && (
+                <Pressable onPress={clearCompleted} accessibilityRole="button" hitSlop={8}>
+                  <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Clear completed</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
         )}
         {lastDeleted && (
@@ -381,6 +395,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingTop: 12,
+  },
+  footerActions: {
+    flexDirection: 'row',
+    gap: 16,
   },
   undoBar: {
     flexDirection: 'row',
