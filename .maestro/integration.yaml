@@ -1,0 +1,47 @@
+# Checks that due dates, #tags and sort orders work together on one list.
+# Run: maestro --device <simulator UDID> test .maestro/integration.yaml --test-output-dir <your own folder>
+appId: com.buidler0.todoios
+---
+- launchApp:
+    clearState: true
+- swipe:
+    direction: DOWN
+    duration: 100
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- tapOn: "What needs doing?"
+- inputText: "pear #fruit"
+- tapOn: "Add"
+- tapOn: "What needs doing?"
+- inputText: "Buy milk #shop"
+- tapOn: "Add"
+- tapOn: "What needs doing?"
+- inputText: "apple #fruit"
+- tapOn: "Add"
+- tapOn: "Edit pear #fruit"
+- tapOn: "Due date (YYYY-MM-DD)"
+- inputText: "2099-12-31"
+- tapOn: "Save"
+- assertVisible: "Due 2099-12-31"
+
+# A tag filter hides the move arrows; A-Z sorts what the tag leaves.
+- tapOn: "Tag #fruit"
+- assertNotVisible: "Buy milk #shop"
+- assertNotVisible: "Move apple #fruit up"
+- tapOn: "Sort: Manual"
+- assertVisible: "Sort: A-Z"
+- assertVisible:
+    below: "apple #fruit"
+    text: "pear #fruit"
+- assertVisible: "Due 2099-12-31"
+- assertNotVisible: "Move apple #fruit up"
+
+# Clearing the tag brings the arrows back, disabled outside Manual.
+- tapOn: "Tag #fruit"
+- assertVisible: "Buy milk #shop"
+- assertVisible:
+    text: "Move apple #fruit up"
+    enabled: false
