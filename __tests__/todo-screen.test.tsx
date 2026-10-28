@@ -777,3 +777,125 @@ test('a to-do added before load that repeats a saved title is dropped', async ()
   expect(screen.queryByText('old')).toBeNull();
   expect(screen.getByRole('checkbox', { name: 'Old' })).toBeChecked();
 });
+
+function setDue(title: string, due: string) {
+  fireEvent.press(screen.getByRole('button', { name: `Edit ${title}` }));
+  fireEvent.changeText(screen.getByPlaceholderText('Due date (YYYY-MM-DD)'), due);
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+}
+
+test('sets a due date, shows it under the title, saves it and starts the next edit with it', async () => {
+  await renderWithThree();
+
+  setDue('Buy bread', '2999-11-03');
+
+  expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+  expect(screen.getByText('Due 2999-11-03')).toBeOnTheScreen();
+  expect(screen.getAllByText(/^Due /)).toHaveLength(1);
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([
+    { title: 'Buy milk' },
+    { title: 'Buy bread', due: '2999-11-03' },
+    { title: 'Buy eggs' },
+  ]);
+  expect(saved[0]).not.toHaveProperty('due');
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  expect(screen.getByPlaceholderText('Due date (YYYY-MM-DD)').props.value).toBe('2999-11-03');
+  fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
+  expect(screen.getByPlaceholderText('Due date (YYYY-MM-DD)').props.value).toBe('');
+});
+
+test('shows Overdue for a to-do not done whose date has passed, and the date once done', async () => {
+  await renderWithThree();
+  setDue('Buy milk', '2000-01-01');
+
+  expect(screen.getByText('Overdue')).toBeOnTheScreen();
+  expect(screen.queryByText('Due 2000-01-01')).toBeNull();
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  expect(screen.getByText('Due 2000-01-01')).toBeOnTheScreen();
+  expect(screen.queryByText('Overdue')).toBeNull();
+});
+
+test('a to-do due today is not overdue, and one due yesterday is', async () => {
+  await renderWithThree();
+  jest.useFakeTimers({ now: new Date(2026, 10, 3, 23, 59) });
+
+  setDue('Buy milk', '2026-11-03');
+  setDue('Buy bread', '2026-11-02');
+
+  expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
+  expect(screen.getByText('Overdue')).toBeOnTheScreen();
+  expect(screen.queryByText('Due 2026-11-02')).toBeNull();
+});
+
+test('refuses a due date of the wrong shape or a day that does not exist, and stays in editing', async () => {
+  await renderWithThree();
+
+  for (const due of ['2026-2-3', 'tomorrow', '03-11-2026', '2026-02-30', '2026-13-01', '2027-02-29']) {
+    fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
+    fireEvent.changeText(screen.getByLabelText('Edit Buy milk'), 'Buy oat milk');
+    fireEvent.changeText(screen.getByPlaceholderText('Due date (YYYY-MM-DD)'), due);
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.getByText('Use YYYY-MM-DD')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeOnTheScreen();
+    expect(screen.getByPlaceholderText('Due date (YYYY-MM-DD)').props.value).toBe(due);
+    fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText('Use YYYY-MM-DD')).toBeNull();
+  }
+
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+  expect(screen.queryByText(/^Due /)).toBeNull();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved.some((t: { due?: string }) => 'due' in t)).toBe(false);
+});
+
+test('the bad date message goes away on typing, and a leap day is accepted', async () => {
+  await renderWithThree();
+  setDue('Buy milk', '2028-02-30');
+  expect(screen.getByText('Use YYYY-MM-DD')).toBeOnTheScreen();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Due date (YYYY-MM-DD)'), ' 2028-02-29 ');
+  expect(screen.queryByText('Use YYYY-MM-DD')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(screen.getByText('Due 2028-02-29')).toBeOnTheScreen();
+});
+
+test('clearing the due date removes it and saves the to-do without one', async () => {
+  await renderWithThree();
+  setDue('Buy eggs', '2999-01-01');
+  expect(screen.getByText('Due 2999-01-01')).toBeOnTheScreen();
+
+  setDue('Buy eggs', '');
+
+  expect(screen.queryByText('Due 2999-01-01')).toBeNull();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved[2]).toMatchObject({ title: 'Buy eggs' });
+  expect(saved[2]).not.toHaveProperty('due');
+});
+
+test('a saved due date shows again after a relaunch', async () => {
+  await renderWithThree();
+  setDue('Buy bread', '2999-11-03');
+
+  screen.unmount();
+  render(<TodoScreen />);
+
+  expect(await screen.findByText('Due 2999-11-03')).toBeOnTheScreen();
+});
+
+test('saving an empty title still deletes the to-do whatever the due date says', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy milk'), '');
+  fireEvent.changeText(screen.getByPlaceholderText('Due date (YYYY-MM-DD)'), 'soon');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy eggs']);
+  expect(screen.queryByText('Use YYYY-MM-DD')).toBeNull();
+});
