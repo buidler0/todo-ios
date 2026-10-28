@@ -88,6 +88,32 @@ function MoveButton({
   );
 }
 
+function Chip({
+  label,
+  accessibilityLabel,
+  selected,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  accessibilityLabel?: string;
+  selected: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={[styles.chip, selected && { backgroundColor: Colors.light.tint }]}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ selected, disabled }}>
+      <Text style={selected && styles.chipSelectedText}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export default function TodoScreen() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -299,18 +325,13 @@ export default function TodoScreen() {
           {FILTER_NAMES.map((name) => {
             const selected = name === filter;
             return (
-              <Pressable
+              <Chip
                 key={name}
-                style={[
-                  styles.filterButton,
-                  selected && { backgroundColor: Colors.light.tint },
-                ]}
-                onPress={() => selectFilter(name)}
+                label={name}
+                selected={selected}
                 disabled={!loaded}
-                accessibilityRole="button"
-                accessibilityState={{ selected, disabled: !loaded }}>
-                <Text style={selected && styles.filterSelectedText}>{name}</Text>
-              </Pressable>
+                onPress={() => selectFilter(name)}
+              />
             );
           })}
         </View>
@@ -501,14 +522,14 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 8,
   },
-  filterButton: {
+  chip: {
     borderWidth: 1,
     borderColor: Colors.light.tint,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  filterSelectedText: {
+  chipSelectedText: {
     color: '#fff',
   },
   footer: {
