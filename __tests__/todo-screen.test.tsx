@@ -777,3 +777,152 @@ test('a to-do added before load that repeats a saved title is dropped', async ()
   expect(screen.queryByText('old')).toBeNull();
   expect(screen.getByRole('checkbox', { name: 'Old' })).toBeChecked();
 });
+
+function chooseSort(name: 'Manual' | 'A-Z' | 'Done last') {
+  for (let presses = 0; !screen.queryByRole('button', { name: `Sort: ${name}` }); presses++) {
+    if (presses === 3) throw new Error(`No sort named ${name}`);
+    fireEvent.press(screen.getByRole('button', { name: /^Sort: / }));
+  }
+}
+
+test('the sort button cycles Manual, A-Z, Done last and back to Manual', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Sort: Manual' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Sort: A-Z' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Sort: Done last' }));
+  expect(screen.getByRole('button', { name: 'Sort: Manual' })).toBeOnTheScreen();
+});
+
+test('A-Z sorts by title ignoring case, and Manual shows the list order again', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('banana');
+  addTodo('Cherry');
+  addTodo('apple');
+
+  chooseSort('A-Z');
+  expect(titlesInOrder()).toEqual(['apple', 'banana', 'Cherry']);
+
+  chooseSort('Manual');
+  expect(titlesInOrder()).toEqual(['banana', 'Cherry', 'apple']);
+});
+
+test('Done last keeps list order but moves done to-dos after the others', async () => {
+  await renderWithThree();
+  chooseSort('Done last');
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy eggs', 'Buy milk']);
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  expect(titlesInOrder()).toEqual(['Buy eggs', 'Buy milk', 'Buy bread']);
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy eggs', 'Buy bread']);
+});
+
+test('pinned to-dos stay above the rest in every order', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy eggs' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy milk' }));
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy eggs', 'Buy bread']);
+
+  chooseSort('A-Z');
+  expect(titlesInOrder()).toEqual(['Buy eggs', 'Buy milk', 'Buy bread']);
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  chooseSort('Done last');
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy eggs', 'Buy bread']);
+});
+
+test('Done last keeps a done pinned to-do in the pinned group', async () => {
+  await renderWithThree();
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy bread' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Pin Buy eggs' }));
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy bread' }));
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy eggs', 'Buy milk']);
+
+  chooseSort('A-Z');
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy eggs', 'Buy milk']);
+
+  chooseSort('Done last');
+  expect(titlesInOrder()).toEqual(['Buy eggs', 'Buy bread', 'Buy milk']);
+});
+
+test('the move buttons are disabled in A-Z and Done last and work again in Manual', async () => {
+  await renderWithThree();
+  const moveUp = () => screen.getByRole('button', { name: 'Move Buy bread up' });
+  const moveDown = () => screen.getByRole('button', { name: 'Move Buy bread down' });
+
+  for (const name of ['A-Z', 'Done last'] as const) {
+    chooseSort(name);
+    expect(moveUp()).toBeDisabled();
+    expect(moveDown()).toBeDisabled();
+  }
+
+  chooseSort('Manual');
+  expect(moveUp()).toBeEnabled();
+  expect(moveDown()).toBeEnabled();
+  fireEvent.press(moveUp());
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy milk', 'Buy eggs']);
+});
+
+test('saves the chosen sort and selects it again after a relaunch', async () => {
+  await renderWithThree();
+
+  chooseSort('A-Z');
+
+  expect(await AsyncStorage.getItem('sort')).toBe('A-Z');
+  screen.unmount();
+  render(<TodoScreen />);
+  await screen.findByRole('button', { name: 'Sort: A-Z' });
+
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy eggs', 'Buy milk']);
+});
+
+test('falls back to Manual when the saved sort is not one of the sorts', async () => {
+  await AsyncStorage.multiSet([
+    [
+      'todos',
+      JSON.stringify([
+        { id: '1', title: 'Buy milk', done: false, pinned: false },
+        { id: '2', title: 'Buy bread', done: false, pinned: false },
+      ]),
+    ],
+    ['sort', 'Newest'],
+  ]);
+  render(<TodoScreen />);
+
+  await screen.findByRole('checkbox', { name: 'Buy milk' });
+  expect(screen.getByRole('button', { name: 'Sort: Manual' })).toBeOnTheScreen();
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread']);
+});
+
+test('the sort button is disabled until the saved data has loaded', async () => {
+  let finishLoading: (saved: [string, string | null][]) => void = () => {};
+  jest.spyOn(AsyncStorage, 'multiGet').mockReturnValueOnce(
+    new Promise((resolve) => {
+      finishLoading = resolve;
+    })
+  );
+  render(<TodoScreen />);
+
+  expect(screen.getByRole('button', { name: 'Sort: Manual' })).toBeDisabled();
+
+  await act(async () => finishLoading([['todos', null], ['sort', 'Done last']]));
+
+  expect(screen.getByRole('button', { name: 'Sort: Done last' })).toBeEnabled();
+});
+
+test('editing a title under A-Z re-sorts it on save', async () => {
+  await renderWithThree();
+  chooseSort('A-Z');
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy eggs', 'Buy milk']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'Buy zucchini');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(titlesInOrder()).toEqual(['Buy eggs', 'Buy milk', 'Buy zucchini']);
+});
