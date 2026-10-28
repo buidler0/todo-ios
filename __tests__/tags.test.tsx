@@ -257,7 +257,7 @@ test('the tag buttons are disabled until the saved data has loaded', async () =>
 
   expect(tagButton('#shop')).toBeDisabled();
 
-  await act(async () => finishLoading([['todos', null], ['filter', null]]));
+  await act(async () => finishLoading([['todos', null], ['filter', null], ['sort', null]]));
 
   expect(tagButton('#shop')).toBeEnabled();
 });
