@@ -109,7 +109,14 @@ export default function TodoScreen() {
       if (isFilter(savedFilter)) setFilter(savedFilter);
       if (saved) {
         const stored: (Omit<Todo, 'pinned'> & { pinned?: boolean })[] = JSON.parse(saved);
-        setTodos(withUniqueIds(stored.map((t) => ({ ...t, pinned: t.pinned === true }))));
+        const loadedTodos = stored.map((t) => ({ ...t, pinned: t.pinned === true }));
+        // Keep to-dos added while the load was in flight, unless they repeat a saved title.
+        setTodos((early) =>
+          withUniqueIds([
+            ...loadedTodos,
+            ...early.filter((t) => !loadedTodos.some((s) => sameTitle(s.title, t.title))),
+          ])
+        );
       }
       setLoaded(true);
     });
