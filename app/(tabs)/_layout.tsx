@@ -20,8 +20,19 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'To-dos',
+          tabBarButtonTestID: 'todos-tab',
           tabBarIcon: ({ color }) => (
             <SymbolView name="checklist" tintColor={color} size={28} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="stats"
+        options={{
+          title: 'Stats',
+          tabBarButtonTestID: 'stats-tab',
+          tabBarIcon: ({ color }) => (
+            <SymbolView name="chart.bar" tintColor={color} size={28} />
           ),
         }}
       />

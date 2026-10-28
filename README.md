@@ -1,5 +1,5 @@
 # To-do (iOS)
-A one-screen iOS to-do app (add, tick done, edit, delete with undo, filter by All/Active/Done, count what's left, clear completed, pin, undo mark all, remembered filter, kept between launches) built by a crew of coding agents as a practice app. Expo SDK 57 + Expo Router + TypeScript, run as its own iPhone app (no Expo Go).
+A two-tab iOS to-do app (add, tick done, edit, delete with undo, filter by All/Active/Done, count what's left, clear completed, pin, undo mark all, remembered filter, kept between launches, and a Stats tab with how many are done and left) built by a crew of coding agents as a practice app. Expo SDK 57 + Expo Router + TypeScript, run as its own iPhone app (no Expo Go).
 
 Stage: prototype · Works: yes (checked 2026-10-27) · Next: try add, tick, edit and delete on the simulator · Decide by: 2026-11-23
 Why: a small, real app for practising agent-driven development with firstmate and no-mistakes.
@@ -9,6 +9,6 @@ npm install
 npm test                                   # Jest: every list action
 npx expo run:ios --device <simulator UDID>  # development build with Metro and live reload
 
-The screen is `app/(tabs)/index.tsx`; the list is saved with AsyncStorage on every change.
+The to-do screen is `app/(tabs)/index.tsx` and the Stats screen is `app/(tabs)/stats.tsx`; the list is saved with AsyncStorage on every change, in the format `lib/saved-todos.ts` defines.
 `plugins/withSceneLifecycle.js` switches on the UIScene life cycle, which iOS 27 requires and Expo 57's template lacks.
 Testing on the simulator with Maestro is in [AGENTS.md](AGENTS.md).
