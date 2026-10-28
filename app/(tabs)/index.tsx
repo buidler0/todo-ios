@@ -329,7 +329,7 @@ export default function TodoScreen() {
               <Text style={styles.addButtonText}>Add</Text>
             </Pressable>
           </View>
-          {duplicateIn === 'add' && <Text style={styles.duplicate}>Already on the list.</Text>}
+          {duplicateIn === 'add' && <Text style={styles.error}>Already on the list.</Text>}
         </View>
         <TextInput
           style={[styles.input, styles.search, { color: textColor }]}
@@ -376,8 +376,8 @@ export default function TodoScreen() {
           renderItem={({ item }) => {
             const label = dueLabel(item, today);
             return item.id === editingId ? (
-              <View>
-                <View style={styles.row}>
+              <View style={styles.editForm}>
+                <View style={styles.editRow}>
                   <TextInput
                     style={[styles.input, { color: textColor }]}
                     value={editDraft}
@@ -409,8 +409,8 @@ export default function TodoScreen() {
                   autoCapitalize="none"
                   accessibilityLabel={`Due date for ${item.title}`}
                 />
-                {dueInvalid && <Text style={styles.duplicate}>Use YYYY-MM-DD</Text>}
-                {duplicateIn === 'edit' && <Text style={styles.duplicate}>Already on the list.</Text>}
+                {dueInvalid && <Text style={styles.error}>Use YYYY-MM-DD</Text>}
+                {duplicateIn === 'edit' && <Text style={styles.error}>Already on the list.</Text>}
               </View>
             ) : (
             <View style={styles.row}>
@@ -529,7 +529,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  duplicate: {
+  error: {
     color: '#c0392b',
     marginTop: 6,
   },
@@ -603,6 +603,15 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#ccc',
+  },
+  editForm: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#ccc',
+  },
+  editRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   rowMain: {
     flex: 1,
