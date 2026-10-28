@@ -13,12 +13,10 @@ import {
 import { Text, View, useThemeColor } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import { TODOS_KEY, parseSavedTodos, type Todo } from '@/lib/saved-todos';
 
-const STORAGE_KEY = 'todos';
 const FILTER_KEY = 'filter';
 const UNDO_MS = 5000;
-
-type Todo = { id: string; title: string; done: boolean; pinned: boolean };
 
 type Undo =
   | { kind: 'delete'; todo: Todo; index: number }
@@ -105,11 +103,10 @@ export default function TodoScreen() {
   const [windowY, setWindowY] = useState(0);
 
   useEffect(() => {
-    AsyncStorage.multiGet([STORAGE_KEY, FILTER_KEY]).then(([[, saved], [, savedFilter]]) => {
+    AsyncStorage.multiGet([TODOS_KEY, FILTER_KEY]).then(([[, saved], [, savedFilter]]) => {
       if (isFilter(savedFilter)) setFilter(savedFilter);
       if (saved) {
-        const stored: (Omit<Todo, 'pinned'> & { pinned?: boolean })[] = JSON.parse(saved);
-        const loadedTodos = stored.map((t) => ({ ...t, pinned: t.pinned === true }));
+        const loadedTodos = parseSavedTodos(saved);
         // Keep to-dos added while the load was in flight, unless they repeat a saved title.
         setTodos((early) =>
           withUniqueIds([
@@ -124,7 +121,7 @@ export default function TodoScreen() {
 
   useEffect(() => {
     // Skip the first render so the empty initial list never overwrites saved to-dos.
-    if (loaded) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
+    if (loaded) AsyncStorage.setItem(TODOS_KEY, JSON.stringify(todos));
   }, [todos, loaded]);
 
   const term = query.trim().toLowerCase();
