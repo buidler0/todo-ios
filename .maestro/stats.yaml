@@ -1,0 +1,48 @@
+appId: com.buidler0.todoios
+---
+- launchApp:
+    clearState: true
+- swipe:
+    direction: DOWN
+    duration: 100
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- tapOn:
+    id: "stats-tab"
+- assertVisible: "No to-dos yet"
+- tapOn:
+    id: "todos-tab"
+- tapOn: "What needs doing?"
+- inputText: "Buy milk"
+- pressKey: Enter
+- tapOn: "What needs doing?"
+- inputText: "Buy bread"
+- pressKey: Enter
+- tapOn: "Buy milk"
+- tapOn:
+    id: "stats-tab"
+- assertVisible: "2 to-dos"
+- assertVisible: "1 done"
+- assertVisible: "1 left"
+- assertVisible: "50% done"
+- tapOn:
+    id: "todos-tab"
+- tapOn: "What needs doing?"
+- inputText: "Buy eggs"
+- pressKey: Enter
+- tapOn: "What needs doing?"
+- inputText: "Buy tea"
+- pressKey: Enter
+- tapOn: "What needs doing?"
+- inputText: "Buy rice"
+- pressKey: Enter
+- tapOn: "Buy eggs"
+- tapOn:
+    id: "stats-tab"
+- assertVisible: "5 to-dos"
+- assertVisible: "2 done"
+- assertVisible: "3 left"
+- assertVisible: "40% done"
