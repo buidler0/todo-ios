@@ -756,3 +756,24 @@ test('saving an empty edit of the only to-do leaves an empty list with Undo', as
   expect(screen.getByText('Nothing to do yet.')).toBeOnTheScreen();
   expect(screen.getByRole('button', { name: 'Undo' })).toBeOnTheScreen();
 });
+
+test('a to-do added before the saved list loads is kept after it', async () => {
+  await AsyncStorage.setItem('todos', JSON.stringify([{ id: 'old-1', title: 'Old', done: false }]));
+  render(<TodoScreen />);
+  addTodo('New');
+
+  expect(await screen.findByText('Old')).toBeOnTheScreen();
+  expect(screen.getByText('New')).toBeOnTheScreen();
+  const stored = JSON.parse((await AsyncStorage.getItem('todos'))!);
+  expect(stored.map((t: { title: string }) => t.title)).toEqual(['Old', 'New']);
+});
+
+test('a to-do added before load that repeats a saved title is dropped', async () => {
+  await AsyncStorage.setItem('todos', JSON.stringify([{ id: 'old-1', title: 'Old', done: true }]));
+  render(<TodoScreen />);
+  addTodo('old');
+
+  expect(await screen.findByText('Old')).toBeOnTheScreen();
+  expect(screen.queryByText('old')).toBeNull();
+  expect(screen.getByRole('checkbox', { name: 'Old' })).toBeChecked();
+});
