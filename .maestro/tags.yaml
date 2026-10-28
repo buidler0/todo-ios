@@ -1,0 +1,54 @@
+# Adds tagged to-dos, picks a tag on top of a filter, clears it, and checks it is not kept after a relaunch.
+# Run: maestro --device <simulator UDID> test .maestro/tags.yaml --test-output-dir <your own folder>
+appId: com.buidler0.todoios
+---
+- launchApp:
+    clearState: true
+# A no-op swipe stops Maestro's iOS driver crashing on a cold start.
+- swipe:
+    direction: DOWN
+    duration: 100
+# The filter buttons stay disabled until the saved list has loaded.
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- tapOn: "What needs doing?"
+- inputText: "Buy milk #shop"
+- tapOn: "Add"
+- tapOn: "What needs doing?"
+- inputText: "Call mum #home"
+- tapOn: "Add"
+- tapOn: "What needs doing?"
+- inputText: "Buy bread #shop"
+- tapOn: "Add"
+- assertVisible: "Tag #shop"
+- assertVisible: "Tag #home"
+- tapOn: "Buy milk #shop"
+- tapOn: "Tag #shop"
+- assertVisible: "Buy milk #shop"
+- assertVisible: "Buy bread #shop"
+- assertNotVisible: "Call mum #home"
+- tapOn: "Active"
+- assertVisible: "Buy bread #shop"
+- assertNotVisible: "Buy milk #shop"
+- assertNotVisible: "Call mum #home"
+- tapOn: "Tag #shop"
+- assertVisible: "Buy bread #shop"
+- assertVisible: "Call mum #home"
+- assertNotVisible: "Buy milk #shop"
+- tapOn: "All"
+- tapOn: "Tag #home"
+- assertVisible: "Call mum #home"
+- assertNotVisible: "Buy bread #shop"
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- assertVisible: "Buy milk #shop"
+- assertVisible: "Call mum #home"
+- assertVisible: "Buy bread #shop"
