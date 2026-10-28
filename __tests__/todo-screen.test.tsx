@@ -840,7 +840,7 @@ test('a to-do due today turns Overdue at the next midnight', async () => {
   act(() => jest.advanceTimersByTime(59_999));
   expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
 
-  act(() => jest.advanceTimersByTime(1));
+  act(() => jest.advanceTimersByTime(1_001));
   expect(screen.getByText('Overdue')).toBeOnTheScreen();
   expect(screen.queryByText('Due 2026-11-03')).toBeNull();
 });

@@ -159,8 +159,8 @@ export default function TodoScreen() {
   useEffect(() => {
     const refresh = () => setToday(localToday());
     const now = new Date();
-    const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    const timer = setTimeout(refresh, midnight.getTime() - now.getTime());
+    const justAfterMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+    const timer = setTimeout(refresh, justAfterMidnight.getTime() - now.getTime());
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') refresh();
     });
