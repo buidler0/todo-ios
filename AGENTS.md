@@ -1,6 +1,6 @@
 # todo-ios
 
-A one-screen Expo app; [README.md](README.md) says what it does and how to run it.
+A two-tab Expo app; [README.md](README.md) says what it does and how to run it.
 
 ## Checking a change on the iOS simulator
 
@@ -14,5 +14,6 @@ JAVA_HOME=/opt/homebrew/opt/openjdk@17 maestro --device $U test .maestro/smoke.y
 ```
 
 - `.maestro/smoke.yaml` is the tested starting flow; copy its first lines (launch, swipe, wait for `All` to be enabled) into any new flow, since taps before the saved list loads can be lost.
+- The keyboard stays up after `Add` and covers the tab bar, and Maestro's `hideKeyboard` fails on this app. Before tapping a tab, add with `pressKey: Enter` instead, which submits and closes the keyboard (see `.maestro/stats.yaml`).
 - Maestro MCP is set up in `.mcp.json`; use its `inspect_screen` to see what is on screen instead of guessing.
 - Delete your simulator when done: `xcrun simctl delete $U`.
