@@ -1,0 +1,98 @@
+# Cycles Sort: Manual, A-Z, Done last; checks the order, pins, disabled move buttons and the saved choice.
+# Run: maestro --device <simulator UDID> test .maestro/sort.yaml --test-output-dir <your own folder>
+appId: com.buidler0.todoios
+---
+- launchApp:
+    clearState: true
+# A no-op swipe stops Maestro's iOS driver crashing on a cold start.
+- swipe:
+    direction: DOWN
+    duration: 100
+# The filter and sort buttons stay disabled until the saved list has loaded.
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- tapOn: "What needs doing?"
+- inputText: "pear"
+- tapOn: "Add"
+- inputText: "Banana"
+- tapOn: "Add"
+- inputText: "apple"
+- tapOn: "Add"
+- assertVisible: "Sort: Manual"
+- assertVisible:
+    text: "Banana"
+    below: "pear"
+- assertVisible:
+    text: "apple"
+    below: "Banana"
+
+# A-Z ignores case, and the move buttons are disabled.
+- tapOn: "Sort: Manual"
+- assertVisible: "Sort: A-Z"
+- assertVisible:
+    text: "Banana"
+    below: "apple"
+- assertVisible:
+    text: "pear"
+    below: "Banana"
+- assertVisible:
+    text: "Move Banana down"
+    enabled: false
+- assertVisible:
+    text: "Move Banana up"
+    enabled: false
+
+# Done last keeps list order but puts the done to-do after the others.
+- tapOn: "Sort: A-Z"
+- assertVisible: "Sort: Done last"
+- assertVisible:
+    text: "Banana"
+    below: "pear"
+- assertVisible:
+    text: "apple"
+    below: "Banana"
+- tapOn: "pear"
+- assertVisible: "2 items left"
+- assertVisible:
+    text: "pear"
+    below: "apple"
+- assertVisible:
+    text: "Move Banana down"
+    enabled: false
+
+# A pinned to-do stays on top, even when it is done.
+- tapOn: "Pin pear"
+- assertVisible:
+    text: "Banana"
+    below: "pear"
+- assertVisible:
+    text: "apple"
+    below: "Banana"
+
+# Back to Manual: the move buttons work again.
+- tapOn: "Sort: Done last"
+- assertVisible: "Sort: Manual"
+- assertVisible:
+    text: "Move Banana down"
+    enabled: true
+
+# The chosen order survives a relaunch.
+- tapOn: "Sort: Manual"
+- assertVisible: "Sort: A-Z"
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- assertVisible: "Sort: A-Z"
+- assertVisible:
+    text: "apple"
+    below: "pear"
+- assertVisible:
+    text: "Banana"
+    below: "apple"
