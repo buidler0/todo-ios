@@ -128,11 +128,11 @@ export default function TodoScreen() {
   }, [todos, loaded]);
 
   const term = query.trim().toLowerCase();
-  const visibleTodos = pinnedFirst(todos)
-    .filter(FILTERS[filter])
-    .filter((t) => t.title.toLowerCase().includes(term));
-  // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
-  const canReorder = filter === 'All' && !term;
+  const narrowings: ((t: Todo) => boolean)[] = [];
+  if (filter !== 'All') narrowings.push(FILTERS[filter]);
+  if (term) narrowings.push((t) => t.title.toLowerCase().includes(term));
+  const visibleTodos = pinnedFirst(todos).filter((t) => narrowings.every((keep) => keep(t)));
+  const showsFullList = narrowings.length === 0;
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
@@ -370,7 +370,7 @@ export default function TodoScreen() {
                   <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
                 </Pressable>
               </View>
-              {canReorder && (
+              {showsFullList && (
                 <View style={styles.moveActions}>
                   <MoveButton
                     label={`Move ${item.title} up`}
