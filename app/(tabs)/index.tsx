@@ -16,6 +16,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 
 const STORAGE_KEY = 'todos';
 const FILTER_KEY = 'filter';
+const SORT_KEY = 'sort';
 const UNDO_MS = 5000;
 
 type Todo = { id: string; title: string; done: boolean; pinned: boolean };
@@ -35,6 +36,18 @@ const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
 const isFilter = (value: string | null | undefined): value is Filter =>
   FILTER_NAMES.some((name) => name === value);
 
+type Sort = 'Manual' | 'A-Z' | 'Done last';
+
+const SORTS: Record<Sort, (a: Todo, b: Todo) => number> = {
+  Manual: () => 0,
+  'A-Z': (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'accent' }),
+  'Done last': (a, b) => Number(a.done) - Number(b.done),
+};
+const SORT_NAMES = Object.keys(SORTS) as Sort[];
+const isSort = (value: string | null | undefined): value is Sort =>
+  SORT_NAMES.some((name) => name === value);
+const nextSort = (sort: Sort) => SORT_NAMES[(SORT_NAMES.indexOf(sort) + 1) % SORT_NAMES.length];
+
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -48,10 +61,8 @@ function withUniqueIds(list: Todo[]): Todo[] {
   });
 }
 
-const pinnedFirst = (list: Todo[]) => [
-  ...list.filter((t) => t.pinned),
-  ...list.filter((t) => !t.pinned),
-];
+const arrange = (list: Todo[], sort: Sort) =>
+  [...list].sort((a, b) => Number(b.pinned) - Number(a.pinned) || SORTS[sort](a, b));
 
 function groupNeighbour(list: Todo[], id: string, offset: -1 | 1): number {
   const from = list.findIndex((t) => t.id === id);
@@ -95,6 +106,7 @@ export default function TodoScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
   const [filter, setFilter] = useState<Filter>('All');
+  const [sort, setSort] = useState<Sort>('Manual');
   const [query, setQuery] = useState('');
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
@@ -105,11 +117,13 @@ export default function TodoScreen() {
   const [windowY, setWindowY] = useState(0);
 
   useEffect(() => {
-    AsyncStorage.multiGet([STORAGE_KEY, FILTER_KEY]).then((entries) => {
+    AsyncStorage.multiGet([STORAGE_KEY, FILTER_KEY, SORT_KEY]).then((entries) => {
       const stored = new Map(entries);
       const saved = stored.get(STORAGE_KEY);
       const savedFilter = stored.get(FILTER_KEY);
+      const savedSort = stored.get(SORT_KEY);
       if (isFilter(savedFilter)) setFilter(savedFilter);
+      if (isSort(savedSort)) setSort(savedSort);
       if (saved) {
         const savedTodos: (Omit<Todo, 'pinned'> & { pinned?: boolean })[] = JSON.parse(saved);
         const loadedTodos = savedTodos.map((t) => ({ ...t, pinned: t.pinned === true }));
@@ -131,11 +145,12 @@ export default function TodoScreen() {
   }, [todos, loaded]);
 
   const term = query.trim().toLowerCase();
-  const visibleTodos = pinnedFirst(todos)
+  const visibleTodos = arrange(todos, sort)
     .filter(FILTERS[filter])
     .filter((t) => t.title.toLowerCase().includes(term));
-  // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
+  // A swap on screen is a swap in `todos` only when the screen shows all of `todos` in manual order.
   const canReorder = filter === 'All' && !term;
+  const manualOrder = sort === 'Manual';
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
@@ -147,6 +162,12 @@ export default function TodoScreen() {
   function selectFilter(name: Filter) {
     setFilter(name);
     AsyncStorage.setItem(FILTER_KEY, name);
+  }
+
+  function cycleSort() {
+    const next = nextSort(sort);
+    setSort(next);
+    AsyncStorage.setItem(SORT_KEY, next);
   }
 
   function clearDuplicate(source: 'add' | 'edit') {
@@ -316,6 +337,15 @@ export default function TodoScreen() {
               </Pressable>
             );
           })}
+          <Pressable
+            style={[styles.filterButton, styles.sortButton]}
+            onPress={cycleSort}
+            disabled={!loaded}
+            accessibilityRole="button"
+            accessibilityHint="Changes the order of the list"
+            accessibilityState={{ disabled: !loaded }}>
+            <Text>{`Sort: ${sort}`}</Text>
+          </Pressable>
         </View>
         <FlatList
           data={visibleTodos}
@@ -378,14 +408,14 @@ export default function TodoScreen() {
                   <MoveButton
                     label={`Move ${item.title} up`}
                     glyph="↑"
-                    disabled={groupNeighbour(todos, item.id, -1) < 0}
+                    disabled={!manualOrder || groupNeighbour(todos, item.id, -1) < 0}
                     onPress={() => moveTodo(item.id, -1)}
                     color={Colors[colorScheme].tint}
                   />
                   <MoveButton
                     label={`Move ${item.title} down`}
                     glyph="↓"
-                    disabled={groupNeighbour(todos, item.id, 1) < 0}
+                    disabled={!manualOrder || groupNeighbour(todos, item.id, 1) < 0}
                     onPress={() => moveTodo(item.id, 1)}
                     color={Colors[colorScheme].tint}
                   />
@@ -501,6 +531,7 @@ const styles = StyleSheet.create({
   },
   filters: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 8,
   },
@@ -510,6 +541,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
+  },
+  sortButton: {
+    marginLeft: 'auto',
   },
   filterSelectedText: {
     color: '#fff',
