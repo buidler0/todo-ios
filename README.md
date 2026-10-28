@@ -9,6 +9,6 @@ npm install
 npm test                                   # Jest: every list action
 npx expo run:ios --device <simulator UDID>  # development build with Metro and live reload
 
-The screen is `app/(tabs)/index.tsx`; the list is saved with AsyncStorage on every change.
+The to-do screen is `app/(tabs)/index.tsx` and the Stats screen is `app/(tabs)/stats.tsx`; the list is saved with AsyncStorage on every change.
 `plugins/withSceneLifecycle.js` switches on the UIScene life cycle, which iOS 27 requires and Expo 57's template lacks.
 Testing on the simulator with Maestro is in [AGENTS.md](AGENTS.md).
