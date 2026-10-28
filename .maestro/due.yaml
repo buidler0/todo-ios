@@ -1,0 +1,76 @@
+# Gives a to-do a due date, checks the shown text, refusal, Overdue, clearing and persistence.
+# Run: maestro --device <simulator UDID> test .maestro/due.yaml --test-output-dir <your own folder>
+appId: com.buidler0.todoios
+---
+- launchApp:
+    clearState: true
+- swipe:
+    direction: DOWN
+    duration: 100
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- tapOn: "What needs doing?"
+- inputText: "Pay rent"
+- tapOn: "Add"
+- assertVisible: "Pay rent"
+- assertNotVisible: "Due.*"
+
+# Invalid dates are refused and the edit stays open.
+- tapOn: "Edit Pay rent"
+- tapOn: "Due date (YYYY-MM-DD)"
+- inputText: "2026-02-30"
+- tapOn: "Save"
+- assertVisible: "Use YYYY-MM-DD"
+- assertVisible: "Due date (YYYY-MM-DD)"
+- eraseText: 10
+- inputText: "tomorrow"
+- tapOn: "Save"
+- assertVisible: "Use YYYY-MM-DD"
+
+# A future date shows as Due.
+- eraseText: 8
+- inputText: "2099-12-31"
+- tapOn: "Save"
+- assertNotVisible: "Use YYYY-MM-DD"
+- assertVisible: "Due 2099-12-31"
+- assertNotVisible: "Overdue"
+
+# The edit starts with the current date.
+- tapOn: "Edit Pay rent"
+- assertVisible: "2099-12-31"
+
+# A past date shows Overdue instead.
+- tapOn: "2099-12-31"
+- eraseText: 10
+- inputText: "2020-01-01"
+- tapOn: "Save"
+- assertVisible: "Overdue"
+- assertNotVisible: "Due 2020-01-01"
+
+# Done to-dos are no longer overdue.
+- tapOn: "Pay rent"
+- assertVisible: "Due 2020-01-01"
+- assertNotVisible: "Overdue"
+- tapOn: "Pay rent"
+- assertVisible: "Overdue"
+
+# The date is saved across a relaunch.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- assertVisible: "Overdue"
+
+# Clearing the field removes the date.
+- tapOn: "Edit Pay rent"
+- tapOn: "2020-01-01"
+- eraseText: 10
+- tapOn: "Save"
+- assertNotVisible: "Overdue"
+- assertNotVisible: "Due.*"
