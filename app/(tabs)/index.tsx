@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View as NativeView,
@@ -53,6 +54,23 @@ function localToday() {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+// A tag is any word of a title that starts with '#', such as #shop in 'Buy milk #shop'.
+const tagsIn = (title: string) =>
+  title.split(/\s+/).filter((word) => word.length > 1 && word.startsWith('#'));
+const sameTag = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const hasTag = (todo: Todo, tag: string) => tagsIn(todo.title).some((t) => sameTag(t, tag));
+
+// Every tag once, spelled and ordered as first seen in the list.
+function allTags(list: Todo[]): string[] {
+  const tags: string[] = [];
+  for (const todo of list) {
+    for (const tag of tagsIn(todo.title)) {
+      if (!tags.some((t) => sameTag(t, tag))) tags.push(tag);
+    }
+  }
+  return tags;
 }
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -116,6 +134,7 @@ export default function TodoScreen() {
   const [badDue, setBadDue] = useState(false);
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
+  const [tag, setTag] = useState<string | null>(null);
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
   const colorScheme = useColorScheme();
@@ -147,12 +166,17 @@ export default function TodoScreen() {
     if (loaded) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
   }, [todos, loaded]);
 
+  const tags = allTags(todos);
+  // A tag no to-do has any more has no button to clear it with, so clear it here.
+  if (tag !== null && !tags.some((t) => sameTag(t, tag))) setTag(null);
+
   const term = query.trim().toLowerCase();
   const visibleTodos = pinnedFirst(todos)
     .filter(FILTERS[filter])
+    .filter((t) => tag === null || hasTag(t, tag))
     .filter((t) => t.title.toLowerCase().includes(term));
   // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
-  const canReorder = filter === 'All' && !term;
+  const canReorder = filter === 'All' && tag === null && !term;
   const remaining = todos.filter((t) => !t.done).length;
   const today = localToday();
 
@@ -351,6 +375,29 @@ export default function TodoScreen() {
             );
           })}
         </View>
+        {tags.length > 0 && (
+          <ScrollView
+            horizontal
+            style={styles.tags}
+            contentContainerStyle={styles.tagsContent}
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled">
+            {tags.map((name) => {
+              const selected = tag !== null && sameTag(name, tag);
+              return (
+                <Pressable
+                  key={name}
+                  style={[styles.tagButton, selected && { backgroundColor: Colors.light.tint }]}
+                  onPress={() => setTag(selected ? null : name)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Tag ${name}`}
+                  accessibilityState={{ selected }}>
+                  <Text style={selected && styles.filterSelectedText}>{name}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
         <FlatList
           data={visibleTodos}
           keyboardShouldPersistTaps="handled"
@@ -360,7 +407,7 @@ export default function TodoScreen() {
               {term
                 ? 'No matching to-dos.'
                 : todos.length
-                  ? `No ${filter.toLowerCase()} to-dos.`
+                  ? `No ${filter.toLowerCase()} to-dos${tag === null ? '' : ` tagged ${tag}`}.`
                   : 'Nothing to do yet.'}
             </Text>
           }
@@ -570,6 +617,20 @@ const styles = StyleSheet.create({
   },
   filterSelectedText: {
     color: '#fff',
+  },
+  tags: {
+    flexGrow: 0,
+    marginBottom: 8,
+  },
+  tagsContent: {
+    gap: 8,
+  },
+  tagButton: {
+    borderWidth: 1,
+    borderColor: Colors.light.tint,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   footer: {
     flexDirection: 'row',
