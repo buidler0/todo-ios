@@ -32,7 +32,7 @@ const FILTERS: Record<Filter, (t: Todo) => boolean> = {
   Done: (t) => t.done,
 };
 const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
-const isFilter = (value: string | null): value is Filter =>
+const isFilter = (value: string | null | undefined): value is Filter =>
   FILTER_NAMES.some((name) => name === value);
 
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -105,11 +105,14 @@ export default function TodoScreen() {
   const [windowY, setWindowY] = useState(0);
 
   useEffect(() => {
-    AsyncStorage.multiGet([STORAGE_KEY, FILTER_KEY]).then(([[, saved], [, savedFilter]]) => {
+    AsyncStorage.multiGet([STORAGE_KEY, FILTER_KEY]).then((entries) => {
+      const stored = new Map(entries);
+      const saved = stored.get(STORAGE_KEY);
+      const savedFilter = stored.get(FILTER_KEY);
       if (isFilter(savedFilter)) setFilter(savedFilter);
       if (saved) {
-        const stored: (Omit<Todo, 'pinned'> & { pinned?: boolean })[] = JSON.parse(saved);
-        const loadedTodos = stored.map((t) => ({ ...t, pinned: t.pinned === true }));
+        const savedTodos: (Omit<Todo, 'pinned'> & { pinned?: boolean })[] = JSON.parse(saved);
+        const loadedTodos = savedTodos.map((t) => ({ ...t, pinned: t.pinned === true }));
         // Keep to-dos added while the load was in flight, unless they repeat a saved title.
         setTodos((early) =>
           withUniqueIds([
