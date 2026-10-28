@@ -1,0 +1,95 @@
+# Cycles the sort order, checks pins stay on top and move buttons lock, and checks the order survives a relaunch.
+# Run: maestro --device <simulator UDID> test .maestro/sort.yaml --test-output-dir <your own folder>
+appId: com.buidler0.todoios
+---
+- launchApp:
+    clearState: true
+# A no-op swipe stops Maestro's iOS driver crashing on a cold start.
+- swipe:
+    direction: DOWN
+    duration: 100
+# The filter and sort buttons stay disabled until the saved list has loaded.
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- tapOn: "What needs doing?"
+- inputText: "Cherry"
+- tapOn: "Add"
+- tapOn: "What needs doing?"
+- inputText: "Apple"
+- tapOn: "Add"
+- tapOn: "What needs doing?"
+- inputText: "Banana"
+- tapOn: "Add"
+- assertVisible:
+    text: "Cherry"
+    above:
+      text: "Apple"
+- assertVisible:
+    text: "Apple"
+    above:
+      text: "Banana"
+- assertVisible:
+    text: "Move Apple up"
+    enabled: true
+- tapOn: "Sort: Manual"
+- assertVisible: "Sort: A-Z"
+- assertVisible:
+    text: "Apple"
+    above:
+      text: "Banana"
+- assertVisible:
+    text: "Banana"
+    above:
+      text: "Cherry"
+- assertVisible:
+    text: "Move Banana up"
+    enabled: false
+- tapOn: "Apple"
+- assertVisible: "2 items left"
+- tapOn: "Sort: A-Z"
+- assertVisible: "Sort: Done last"
+- assertVisible:
+    text: "Cherry"
+    above:
+      text: "Banana"
+- assertVisible:
+    text: "Banana"
+    above:
+      text: "Apple"
+- tapOn: "Pin Apple"
+- assertVisible:
+    text: "Apple"
+    above:
+      text: "Cherry"
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- assertVisible: "Sort: Done last"
+- assertVisible:
+    text: "Apple"
+    above:
+      text: "Cherry"
+- assertVisible:
+    text: "Cherry"
+    above:
+      text: "Banana"
+- tapOn: "Sort: Done last"
+- assertVisible: "Sort: Manual"
+- assertVisible:
+    text: "Apple"
+    above:
+      text: "Cherry"
+- assertVisible:
+    text: "Cherry"
+    above:
+      text: "Banana"
+- assertVisible:
+    text: "Move Banana up"
+    enabled: true
