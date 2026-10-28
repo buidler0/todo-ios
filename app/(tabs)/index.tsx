@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View as NativeView,
@@ -13,6 +14,7 @@ import {
 import { Text, View, useThemeColor } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import { hasTag, tagsOf, type Tag } from '@/lib/tags';
 
 const STORAGE_KEY = 'todos';
 const FILTER_KEY = 'filter';
@@ -52,6 +54,12 @@ const pinnedFirst = (list: Todo[]) => [
   ...list.filter((t) => t.pinned),
   ...list.filter((t) => !t.pinned),
 ];
+
+function emptyMessage(term: string, tag: Tag | null, filter: Filter, hasTodos: boolean): string {
+  if (term) return 'No matching to-dos.';
+  if (tag) return `No ${filter.toLowerCase()} to-dos tagged ${tag.label}.`;
+  return hasTodos ? `No ${filter.toLowerCase()} to-dos.` : 'Nothing to do yet.';
+}
 
 function groupNeighbour(list: Todo[], id: string, offset: -1 | 1): number {
   const from = list.findIndex((t) => t.id === id);
@@ -122,6 +130,7 @@ export default function TodoScreen() {
   const [editDraft, setEditDraft] = useState('');
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
+  const [tagKey, setTagKey] = useState<string | null>(null);
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
   const colorScheme = useColorScheme();
@@ -154,9 +163,13 @@ export default function TodoScreen() {
   }, [todos, loaded]);
 
   const term = query.trim().toLowerCase();
+  const tags = tagsOf(todos);
+  const activeTag = tags.find((tag) => tag.key === tagKey) ?? null;
+  if (tagKey !== null && !activeTag) setTagKey(null);
   const narrowings: ((t: Todo) => boolean)[] = [];
   if (filter !== 'All') narrowings.push(FILTERS[filter]);
   if (term) narrowings.push((t) => t.title.toLowerCase().includes(term));
+  if (activeTag) narrowings.push((t) => hasTag(t.title, activeTag.key));
   const visibleTodos = pinnedFirst(todos).filter((t) => narrowings.every((keep) => keep(t)));
   const showsFullList = narrowings.length === 0;
   const remaining = todos.filter((t) => !t.done).length;
@@ -170,6 +183,10 @@ export default function TodoScreen() {
   function selectFilter(name: Filter) {
     setFilter(name);
     AsyncStorage.setItem(FILTER_KEY, name);
+  }
+
+  function toggleTag(key: string) {
+    setTagKey((current) => (current === key ? null : key));
   }
 
   function clearDuplicate(source: 'add' | 'edit') {
@@ -335,17 +352,34 @@ export default function TodoScreen() {
             );
           })}
         </View>
+        {tags.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            style={styles.tags}
+            contentContainerStyle={styles.tagsContent}>
+            {tags.map((tag) => {
+              const selected = tag.key === activeTag?.key;
+              return (
+                <Chip
+                  key={tag.key}
+                  label={tag.label}
+                  accessibilityLabel={`Tag ${tag.label}`}
+                  selected={selected}
+                  onPress={() => toggleTag(tag.key)}
+                />
+              );
+            })}
+          </ScrollView>
+        )}
         <FlatList
           data={visibleTodos}
           keyboardShouldPersistTaps="handled"
           keyExtractor={(t) => t.id}
           ListEmptyComponent={
             <Text style={styles.empty}>
-              {term
-                ? 'No matching to-dos.'
-                : todos.length
-                  ? `No ${filter.toLowerCase()} to-dos.`
-                  : 'Nothing to do yet.'}
+              {emptyMessage(term, activeTag, filter, todos.length > 0)}
             </Text>
           }
           renderItem={({ item }) =>
@@ -521,6 +555,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginBottom: 8,
+  },
+  tags: {
+    flexGrow: 0,
+    flexShrink: 0,
+    marginBottom: 8,
+  },
+  tagsContent: {
+    flexDirection: 'row',
+    gap: 8,
   },
   chip: {
     borderWidth: 1,
