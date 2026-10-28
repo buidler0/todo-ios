@@ -1,0 +1,70 @@
+# Sets, refuses, shows and clears due dates, and checks a date survives a relaunch.
+# Run: maestro --device <simulator UDID> test .maestro/due-dates.yaml --test-output-dir <your own folder>
+appId: com.buidler0.todoios
+---
+- launchApp:
+    clearState: true
+# A no-op swipe stops Maestro's iOS driver crashing on a cold start.
+- swipe:
+    direction: DOWN
+    duration: 100
+# The filter buttons stay disabled until the saved list has loaded.
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- tapOn: "What needs doing?"
+- inputText: "Pay rent"
+- tapOn: "Add"
+- tapOn: "What needs doing?"
+- inputText: "File taxes"
+- tapOn: "Add"
+- assertVisible: "2 items left"
+
+# A day that does not exist is refused and the edit stays open.
+- tapOn: "Edit Pay rent"
+- tapOn: "Due date (YYYY-MM-DD)"
+- inputText: "2026-02-30"
+- tapOn: "Save"
+- assertVisible: "Use YYYY-MM-DD"
+- assertVisible: "Save"
+# Typing a valid date clears the message and saving shows it under the title.
+- eraseText: 10
+- inputText: "2999-11-03"
+- assertNotVisible: "Use YYYY-MM-DD"
+- tapOn: "Save"
+- assertNotVisible: "Save"
+- assertVisible: "Due 2999-11-03"
+
+# A past date on a to-do that is not done shows Overdue, and the date once it is done.
+- tapOn: "Edit File taxes"
+- tapOn: "Due date (YYYY-MM-DD)"
+- inputText: "2000-01-01"
+- tapOn: "Save"
+- assertVisible: "Overdue"
+- tapOn: "File taxes"
+- assertVisible: "Due 2000-01-01"
+- assertNotVisible: "Overdue"
+- tapOn: "File taxes"
+- assertVisible: "Overdue"
+
+# The date is saved.
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- assertVisible: "Due 2999-11-03"
+- assertVisible: "Overdue"
+
+# The field starts with the current date, and clearing it removes the date.
+- tapOn: "Edit Pay rent"
+- assertVisible: "2999-11-03"
+- tapOn: "2999-11-03"
+- eraseText: 10
+- tapOn: "Save"
+- assertNotVisible: "Due 2999-11-03"
+- assertVisible: "Pay rent"

@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useRef, useState } from 'react';
 import {
+  AppState,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -18,7 +19,8 @@ const STORAGE_KEY = 'todos';
 const FILTER_KEY = 'filter';
 const UNDO_MS = 5000;
 
-type Todo = { id: string; title: string; done: boolean; pinned: boolean };
+// `due` is a YYYY-MM-DD day; to-dos without one leave it out.
+type Todo = { id: string; title: string; done: boolean; pinned: boolean; due?: string };
 
 type Undo =
   | { kind: 'delete'; todo: Todo; index: number }
@@ -36,6 +38,23 @@ const isFilter = (value: string | null): value is Filter =>
   FILTER_NAMES.some((name) => name === value);
 
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+function isRealDay(text: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const [year, month, day] = text.split('-').map(Number);
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  // An impossible day such as 02-30 rolls over into the next month.
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
+}
+
+function localToday() {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -94,10 +113,13 @@ export default function TodoScreen() {
   const [draft, setDraft] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  const [editDue, setEditDue] = useState('');
+  const [badDue, setBadDue] = useState(false);
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
+  const [today, setToday] = useState(localToday);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
   const backgroundColor = useThemeColor({}, 'background');
@@ -134,6 +156,19 @@ export default function TodoScreen() {
   // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
   const canReorder = filter === 'All' && !term;
   const remaining = todos.filter((t) => !t.done).length;
+  useEffect(() => {
+    const refresh = () => setToday(localToday());
+    const now = new Date();
+    const justAfterMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+    const timer = setTimeout(refresh, justAfterMidnight.getTime() - now.getTime());
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refresh();
+    });
+    return () => {
+      clearTimeout(timer);
+      subscription.remove();
+    };
+  }, [today]);
 
   useEffect(() => {
     if (!undo) return;
@@ -158,6 +193,11 @@ export default function TodoScreen() {
   function changeEditDraft(text: string) {
     setEditDraft(text);
     clearDuplicate('edit');
+  }
+
+  function changeEditDue(text: string) {
+    setEditDue(text);
+    setBadDue(false);
   }
 
   function addTodo() {
@@ -193,11 +233,14 @@ export default function TodoScreen() {
   function startEditing(todo: Todo) {
     setEditingId(todo.id);
     setEditDraft(todo.title);
+    setEditDue(todo.due ?? '');
+    setBadDue(false);
     clearDuplicate('edit');
   }
 
   function cancelEdit() {
     setEditingId(null);
+    setBadDue(false);
     clearDuplicate('edit');
   }
 
@@ -209,11 +252,19 @@ export default function TodoScreen() {
       cancelEdit();
       return;
     }
+    const due = editDue.trim();
+    if (due && !isRealDay(due)) {
+      setBadDue(true);
+      return;
+    }
     if (todos.some((t) => t.id !== editingId && sameTitle(t.title, title))) {
       setDuplicateIn('edit');
       return;
     }
-    setTodos((current) => current.map((t) => (t.id === editingId ? { ...t, title } : t)));
+    // An undefined due date is dropped when the list is saved as JSON.
+    setTodos((current) =>
+      current.map((t) => (t.id === editingId ? { ...t, title, due: due || undefined } : t))
+    );
     cancelEdit();
   }
 
@@ -331,15 +382,29 @@ export default function TodoScreen() {
             item.id === editingId ? (
               <View>
                 <View style={styles.row}>
-                  <TextInput
-                    style={[styles.input, { color: textColor }]}
-                    value={editDraft}
-                    onChangeText={changeEditDraft}
-                    onSubmitEditing={saveEdit}
-                    returnKeyType="done"
-                    autoFocus
-                    accessibilityLabel={`Edit ${item.title}`}
-                  />
+                  <View style={styles.editFields}>
+                    <TextInput
+                      style={[styles.input, styles.editInput, { color: textColor }]}
+                      value={editDraft}
+                      onChangeText={changeEditDraft}
+                      onSubmitEditing={saveEdit}
+                      returnKeyType="done"
+                      autoFocus
+                      accessibilityLabel={`Edit ${item.title}`}
+                    />
+                    <TextInput
+                      style={[styles.input, styles.editInput, { color: textColor }]}
+                      placeholder="Due date (YYYY-MM-DD)"
+                      placeholderTextColor="#999"
+                      value={editDue}
+                      onChangeText={changeEditDue}
+                      onSubmitEditing={saveEdit}
+                      returnKeyType="done"
+                      keyboardType="numbers-and-punctuation"
+                      autoCorrect={false}
+                      clearButtonMode="while-editing"
+                    />
+                  </View>
                   <View style={styles.editActions}>
                     <Pressable onPress={saveEdit} accessibilityRole="button" hitSlop={8}>
                       <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Save</Text>
@@ -349,6 +414,7 @@ export default function TodoScreen() {
                     </Pressable>
                   </View>
                 </View>
+                {badDue && <Text style={styles.duplicate}>Use YYYY-MM-DD</Text>}
                 {duplicateIn === 'edit' && <Text style={styles.duplicate}>Already on the list.</Text>}
               </View>
             ) : (
@@ -362,13 +428,21 @@ export default function TodoScreen() {
                   hitSlop={8}>
                   <Text style={styles.check}>{item.done ? '☑' : '☐'}</Text>
                 </Pressable>
-                <Pressable
-                  style={styles.titlePress}
-                  onPress={() => startEditing(item)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Edit ${item.title}`}>
-                  <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
-                </Pressable>
+                <View style={styles.titleColumn}>
+                  <Pressable
+                    onPress={() => startEditing(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${item.title}`}>
+                    <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
+                  </Pressable>
+                  {item.due ? (
+                    !item.done && item.due < today ? (
+                      <Text style={[styles.due, styles.overdue]}>Overdue</Text>
+                    ) : (
+                      <Text style={styles.due}>{`Due ${item.due}`}</Text>
+                    )
+                  ) : null}
+                </View>
               </View>
               {canReorder && (
                 <View style={styles.moveActions}>
@@ -545,8 +619,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  titlePress: {
+  titleColumn: {
     flex: 1,
+  },
+  due: {
+    fontSize: 13,
+    marginTop: 2,
+    opacity: 0.6,
+  },
+  overdue: {
+    color: '#c0392b',
+    opacity: 1,
   },
   rowActions: {
     flexDirection: 'row',
@@ -556,6 +639,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     marginHorizontal: 12,
+  },
+  editFields: {
+    flex: 1,
+    gap: 8,
+  },
+  editInput: {
+    flex: 0,
   },
   editActions: {
     flexDirection: 'row',
