@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import TodoScreen from '@/app/(tabs)/index';
 
@@ -764,8 +764,10 @@ test('a to-do added before the saved list loads is kept after it', async () => {
 
   expect(await screen.findByText('Old')).toBeOnTheScreen();
   expect(screen.getByText('New')).toBeOnTheScreen();
-  const stored = JSON.parse((await AsyncStorage.getItem('todos'))!);
-  expect(stored.map((t: { title: string }) => t.title)).toEqual(['Old', 'New']);
+  await waitFor(async () => {
+    const stored = JSON.parse((await AsyncStorage.getItem('todos'))!);
+    expect(stored.map((t: { title: string }) => t.title)).toEqual(['Old', 'New']);
+  });
 });
 
 test('a to-do added before load that repeats a saved title is dropped', async () => {
