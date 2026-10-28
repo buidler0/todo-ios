@@ -1,10 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useRef, useState } from 'react';
 import {
+  AppState,
   FlatList,
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View as NativeView,
@@ -13,12 +15,14 @@ import {
 import { Text, View, useThemeColor } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import { TODOS_KEY } from '@/constants/Storage';
 
-const STORAGE_KEY = 'todos';
 const FILTER_KEY = 'filter';
+const SORT_KEY = 'sort';
 const UNDO_MS = 5000;
 
-type Todo = { id: string; title: string; done: boolean; pinned: boolean };
+// `due` is a YYYY-MM-DD day; to-dos without one leave it out.
+type Todo = { id: string; title: string; done: boolean; pinned: boolean; due?: string };
 
 type Undo =
   | { kind: 'delete'; todo: Todo; index: number }
@@ -32,10 +36,55 @@ const FILTERS: Record<Filter, (t: Todo) => boolean> = {
   Done: (t) => t.done,
 };
 const FILTER_NAMES = Object.keys(FILTERS) as Filter[];
-const isFilter = (value: string | null): value is Filter =>
+const isFilter = (value: unknown): value is Filter =>
   FILTER_NAMES.some((name) => name === value);
 
+type Sort = 'Manual' | 'A-Z' | 'Done last';
+
+// Each order compares within a pin group; sort is stable, so ties keep list order.
+const SORTS: Record<Sort, (a: Todo, b: Todo) => number> = {
+  Manual: () => 0,
+  'A-Z': (a, b) => a.title.toLowerCase().localeCompare(b.title.toLowerCase()),
+  'Done last': (a, b) => Number(a.done) - Number(b.done),
+};
+const SORT_NAMES = Object.keys(SORTS) as Sort[];
+const isSort = (value: unknown): value is Sort => SORT_NAMES.some((name) => name === value);
+
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+function isRealDay(text: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const [year, month, day] = text.split('-').map(Number);
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  // An impossible day such as 02-30 rolls over into the next month.
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
+}
+
+function localToday() {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+// A tag is any word of a title that starts with '#', such as #shop in 'Buy milk #shop'.
+const tagsIn = (title: string) =>
+  title.split(/\s+/).filter((word) => word.length > 1 && word.startsWith('#'));
+const sameTag = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const hasTag = (todo: Todo, tag: string) => tagsIn(todo.title).some((t) => sameTag(t, tag));
+
+// Every tag once, spelled and ordered as first seen in the list.
+function allTags(list: Todo[]): string[] {
+  const tags: string[] = [];
+  for (const todo of list) {
+    for (const tag of tagsIn(todo.title)) {
+      if (!tags.some((t) => sameTag(t, tag))) tags.push(tag);
+    }
+  }
+  return tags;
+}
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -48,10 +97,8 @@ function withUniqueIds(list: Todo[]): Todo[] {
   });
 }
 
-const pinnedFirst = (list: Todo[]) => [
-  ...list.filter((t) => t.pinned),
-  ...list.filter((t) => !t.pinned),
-];
+const inOrder = (list: Todo[], sort: Sort) =>
+  [...list].sort((a, b) => Number(b.pinned) - Number(a.pinned) || SORTS[sort](a, b));
 
 function groupNeighbour(list: Todo[], id: string, offset: -1 | 1): number {
   const from = list.findIndex((t) => t.id === id);
@@ -94,10 +141,15 @@ export default function TodoScreen() {
   const [draft, setDraft] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  const [editDue, setEditDue] = useState('');
+  const [badDue, setBadDue] = useState(false);
   const [filter, setFilter] = useState<Filter>('All');
+  const [sort, setSort] = useState<Sort>('Manual');
   const [query, setQuery] = useState('');
+  const [tag, setTag] = useState<string | null>(null);
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
+  const [today, setToday] = useState(localToday);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
   const backgroundColor = useThemeColor({}, 'background');
@@ -105,8 +157,13 @@ export default function TodoScreen() {
   const [windowY, setWindowY] = useState(0);
 
   useEffect(() => {
-    AsyncStorage.multiGet([STORAGE_KEY, FILTER_KEY]).then(([[, saved], [, savedFilter]]) => {
+    AsyncStorage.multiGet([TODOS_KEY, FILTER_KEY, SORT_KEY]).then((entries) => {
+      const savedValues = new Map(entries);
+      const saved = savedValues.get(TODOS_KEY);
+      const savedFilter = savedValues.get(FILTER_KEY);
+      const savedSort = savedValues.get(SORT_KEY);
       if (isFilter(savedFilter)) setFilter(savedFilter);
+      if (isSort(savedSort)) setSort(savedSort);
       if (saved) {
         const stored: (Omit<Todo, 'pinned'> & { pinned?: boolean })[] = JSON.parse(saved);
         const loadedTodos = stored.map((t) => ({ ...t, pinned: t.pinned === true }));
@@ -124,16 +181,35 @@ export default function TodoScreen() {
 
   useEffect(() => {
     // Skip the first render so the empty initial list never overwrites saved to-dos.
-    if (loaded) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
+    if (loaded) AsyncStorage.setItem(TODOS_KEY, JSON.stringify(todos));
   }, [todos, loaded]);
 
+  const tags = allTags(todos);
+  // A tag no to-do has any more has no button to clear it with, so clear it here.
+  if (tag !== null && !tags.some((t) => sameTag(t, tag))) setTag(null);
+
   const term = query.trim().toLowerCase();
-  const visibleTodos = pinnedFirst(todos)
+  const visibleTodos = inOrder(todos, sort)
     .filter(FILTERS[filter])
+    .filter((t) => tag === null || hasTag(t, tag))
     .filter((t) => t.title.toLowerCase().includes(term));
   // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
-  const canReorder = filter === 'All' && !term;
+  const canReorder = filter === 'All' && tag === null && !term;
+  const manualOrder = sort === 'Manual';
   const remaining = todos.filter((t) => !t.done).length;
+  useEffect(() => {
+    const refresh = () => setToday(localToday());
+    const now = new Date();
+    const justAfterMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+    const timer = setTimeout(refresh, justAfterMidnight.getTime() - now.getTime());
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refresh();
+    });
+    return () => {
+      clearTimeout(timer);
+      subscription.remove();
+    };
+  }, [today]);
 
   useEffect(() => {
     if (!undo) return;
@@ -144,6 +220,12 @@ export default function TodoScreen() {
   function selectFilter(name: Filter) {
     setFilter(name);
     AsyncStorage.setItem(FILTER_KEY, name);
+  }
+
+  function nextSort() {
+    const next = SORT_NAMES[(SORT_NAMES.indexOf(sort) + 1) % SORT_NAMES.length];
+    setSort(next);
+    AsyncStorage.setItem(SORT_KEY, next);
   }
 
   function clearDuplicate(source: 'add' | 'edit') {
@@ -158,6 +240,11 @@ export default function TodoScreen() {
   function changeEditDraft(text: string) {
     setEditDraft(text);
     clearDuplicate('edit');
+  }
+
+  function changeEditDue(text: string) {
+    setEditDue(text);
+    setBadDue(false);
   }
 
   function addTodo() {
@@ -193,11 +280,14 @@ export default function TodoScreen() {
   function startEditing(todo: Todo) {
     setEditingId(todo.id);
     setEditDraft(todo.title);
+    setEditDue(todo.due ?? '');
+    setBadDue(false);
     clearDuplicate('edit');
   }
 
   function cancelEdit() {
     setEditingId(null);
+    setBadDue(false);
     clearDuplicate('edit');
   }
 
@@ -209,11 +299,19 @@ export default function TodoScreen() {
       cancelEdit();
       return;
     }
+    const due = editDue.trim();
+    if (due && !isRealDay(due)) {
+      setBadDue(true);
+      return;
+    }
     if (todos.some((t) => t.id !== editingId && sameTitle(t.title, title))) {
       setDuplicateIn('edit');
       return;
     }
-    setTodos((current) => current.map((t) => (t.id === editingId ? { ...t, title } : t)));
+    // An undefined due date is dropped when the list is saved as JSON.
+    setTodos((current) =>
+      current.map((t) => (t.id === editingId ? { ...t, title, due: due || undefined } : t))
+    );
     cancelEdit();
   }
 
@@ -313,7 +411,38 @@ export default function TodoScreen() {
               </Pressable>
             );
           })}
+          <Pressable
+            style={[styles.filterButton, styles.sortButton]}
+            onPress={nextSort}
+            disabled={!loaded}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !loaded }}>
+            <Text>{`Sort: ${sort}`}</Text>
+          </Pressable>
         </View>
+        {tags.length > 0 && (
+          <ScrollView
+            horizontal
+            style={styles.tags}
+            contentContainerStyle={styles.tagsContent}
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled">
+            {tags.map((name) => {
+              const selected = tag !== null && sameTag(name, tag);
+              return (
+                <Pressable
+                  key={name}
+                  style={[styles.tagButton, selected && { backgroundColor: Colors.light.tint }]}
+                  onPress={() => setTag(selected ? null : name)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Tag ${name}`}
+                  accessibilityState={{ selected }}>
+                  <Text style={selected && styles.filterSelectedText}>{name}</Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
         <FlatList
           data={visibleTodos}
           keyboardShouldPersistTaps="handled"
@@ -323,7 +452,7 @@ export default function TodoScreen() {
               {term
                 ? 'No matching to-dos.'
                 : todos.length
-                  ? `No ${filter.toLowerCase()} to-dos.`
+                  ? `No ${filter.toLowerCase()} to-dos${tag === null ? '' : ` tagged ${tag}`}.`
                   : 'Nothing to do yet.'}
             </Text>
           }
@@ -331,15 +460,29 @@ export default function TodoScreen() {
             item.id === editingId ? (
               <View>
                 <View style={styles.row}>
-                  <TextInput
-                    style={[styles.input, { color: textColor }]}
-                    value={editDraft}
-                    onChangeText={changeEditDraft}
-                    onSubmitEditing={saveEdit}
-                    returnKeyType="done"
-                    autoFocus
-                    accessibilityLabel={`Edit ${item.title}`}
-                  />
+                  <View style={styles.editFields}>
+                    <TextInput
+                      style={[styles.input, styles.editInput, { color: textColor }]}
+                      value={editDraft}
+                      onChangeText={changeEditDraft}
+                      onSubmitEditing={saveEdit}
+                      returnKeyType="done"
+                      autoFocus
+                      accessibilityLabel={`Edit ${item.title}`}
+                    />
+                    <TextInput
+                      style={[styles.input, styles.editInput, { color: textColor }]}
+                      placeholder="Due date (YYYY-MM-DD)"
+                      placeholderTextColor="#999"
+                      value={editDue}
+                      onChangeText={changeEditDue}
+                      onSubmitEditing={saveEdit}
+                      returnKeyType="done"
+                      keyboardType="numbers-and-punctuation"
+                      autoCorrect={false}
+                      clearButtonMode="while-editing"
+                    />
+                  </View>
                   <View style={styles.editActions}>
                     <Pressable onPress={saveEdit} accessibilityRole="button" hitSlop={8}>
                       <Text style={{ color: Colors[colorScheme].tint, fontSize: 16 }}>Save</Text>
@@ -349,6 +492,7 @@ export default function TodoScreen() {
                     </Pressable>
                   </View>
                 </View>
+                {badDue && <Text style={styles.duplicate}>Use YYYY-MM-DD</Text>}
                 {duplicateIn === 'edit' && <Text style={styles.duplicate}>Already on the list.</Text>}
               </View>
             ) : (
@@ -362,27 +506,35 @@ export default function TodoScreen() {
                   hitSlop={8}>
                   <Text style={styles.check}>{item.done ? '☑' : '☐'}</Text>
                 </Pressable>
-                <Pressable
-                  style={styles.titlePress}
-                  onPress={() => startEditing(item)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Edit ${item.title}`}>
-                  <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
-                </Pressable>
+                <View style={styles.titleColumn}>
+                  <Pressable
+                    onPress={() => startEditing(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${item.title}`}>
+                    <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
+                  </Pressable>
+                  {item.due ? (
+                    !item.done && item.due < today ? (
+                      <Text style={[styles.due, styles.overdue]}>Overdue</Text>
+                    ) : (
+                      <Text style={styles.due}>{`Due ${item.due}`}</Text>
+                    )
+                  ) : null}
+                </View>
               </View>
               {canReorder && (
                 <View style={styles.moveActions}>
                   <MoveButton
                     label={`Move ${item.title} up`}
                     glyph="↑"
-                    disabled={groupNeighbour(todos, item.id, -1) < 0}
+                    disabled={!manualOrder || groupNeighbour(todos, item.id, -1) < 0}
                     onPress={() => moveTodo(item.id, -1)}
                     color={Colors[colorScheme].tint}
                   />
                   <MoveButton
                     label={`Move ${item.title} down`}
                     glyph="↓"
-                    disabled={groupNeighbour(todos, item.id, 1) < 0}
+                    disabled={!manualOrder || groupNeighbour(todos, item.id, 1) < 0}
                     onPress={() => moveTodo(item.id, 1)}
                     color={Colors[colorScheme].tint}
                   />
@@ -508,8 +660,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
+  sortButton: {
+    marginLeft: 'auto',
+  },
   filterSelectedText: {
     color: '#fff',
+  },
+  tags: {
+    flexGrow: 0,
+    marginBottom: 8,
+  },
+  tagsContent: {
+    gap: 8,
+  },
+  tagButton: {
+    borderWidth: 1,
+    borderColor: Colors.light.tint,
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
   },
   footer: {
     flexDirection: 'row',
@@ -545,8 +714,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  titlePress: {
+  titleColumn: {
     flex: 1,
+  },
+  due: {
+    fontSize: 13,
+    marginTop: 2,
+    opacity: 0.6,
+  },
+  overdue: {
+    color: '#c0392b',
+    opacity: 1,
   },
   rowActions: {
     flexDirection: 'row',
@@ -556,6 +734,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     marginHorizontal: 12,
+  },
+  editFields: {
+    flex: 1,
+    gap: 8,
+  },
+  editInput: {
+    flex: 0,
   },
   editActions: {
     flexDirection: 'row',

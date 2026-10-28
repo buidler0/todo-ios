@@ -1,0 +1,48 @@
+# Checks the Stats tab: empty, then 5 to-dos with 2 done, then again after a change on the To-dos tab.
+# Run: maestro --device <simulator UDID> test .maestro/stats.yaml --test-output-dir <your own folder>
+appId: com.buidler0.todoios
+---
+- launchApp:
+    clearState: true
+# A no-op swipe stops Maestro's iOS driver crashing on a cold start.
+- swipe:
+    direction: DOWN
+    duration: 100
+# The filter buttons stay disabled until the saved list has loaded.
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- tapOn: "Stats, tab, 2 of 2"
+- assertVisible: "No to-dos yet"
+- tapOn: "To-dos, tab, 1 of 2"
+- tapOn: "What needs doing?"
+- inputText: "Buy milk"
+- tapOn: "Add"
+- tapOn: "What needs doing?"
+- inputText: "Buy bread"
+- tapOn: "Add"
+- tapOn: "What needs doing?"
+- inputText: "Buy eggs"
+- tapOn: "Add"
+- tapOn: "What needs doing?"
+- inputText: "Walk dog"
+- tapOn: "Add"
+- tapOn: "What needs doing?"
+- inputText: "Post letter"
+- tapOn: "Add"
+- tapOn: "Buy milk"
+- tapOn: "Buy bread"
+- assertVisible: "3 items left"
+- tapOn: "Stats, tab, 2 of 2"
+- assertVisible: "5 to-dos"
+- assertVisible: "2 done"
+- assertVisible: "3 left"
+- assertVisible: "40% done"
+- tapOn: "To-dos, tab, 1 of 2"
+- tapOn: "Buy eggs"
+- tapOn: "Stats, tab, 2 of 2"
+- assertVisible: "3 done"
+- assertVisible: "2 left"
+- assertVisible: "60% done"
