@@ -1,0 +1,56 @@
+# Sets, refuses, shows and clears a due date, and checks it survives a relaunch.
+# Run: maestro --device <simulator UDID> test .maestro/due-dates.yaml --test-output-dir <your own folder>
+appId: com.buidler0.todoios
+---
+- launchApp:
+    clearState: true
+# A no-op swipe stops Maestro's iOS driver crashing on a cold start.
+- swipe:
+    direction: DOWN
+    duration: 100
+# The filter buttons stay disabled until the saved list has loaded.
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- tapOn: "What needs doing?"
+- inputText: "Pay rent"
+- tapOn: "Add"
+- tapOn: "Edit Pay rent"
+- tapOn: "Due date for Pay rent"
+- inputText: "2026-02-30"
+- tapOn: "Save"
+- assertVisible: "Use YYYY-MM-DD"
+- assertVisible: "Cancel"
+- tapOn: "Due date for Pay rent"
+- eraseText
+- inputText: "2099-12-31"
+- tapOn: "Save"
+- assertVisible: "Due 2099-12-31"
+- assertNotVisible: "Use YYYY-MM-DD"
+- tapOn: "Edit Pay rent"
+- assertVisible: "2099-12-31"
+- tapOn: "Due date for Pay rent"
+- eraseText
+- inputText: "2020-01-01"
+- tapOn: "Save"
+- assertVisible: "Overdue"
+- assertNotVisible: "Due 2020-01-01"
+- tapOn: "Pay rent"
+- assertVisible: "Due 2020-01-01"
+- assertNotVisible: "Overdue"
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- assertVisible: "Due 2020-01-01"
+- tapOn: "Edit Pay rent"
+- tapOn: "Due date for Pay rent"
+- eraseText
+- tapOn: "Save"
+- assertVisible: "Pay rent"
+- assertNotVisible: "Due 2020-01-01"
