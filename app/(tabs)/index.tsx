@@ -13,13 +13,14 @@ import {
 import { Text, View, useThemeColor } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import { TagFilter, listTags, tagKey, titleTags } from '@/components/TagFilter';
 
 const STORAGE_KEY = 'todos';
 const FILTER_KEY = 'filter';
 const SORT_KEY = 'sort';
 const UNDO_MS = 5000;
 
-type Todo = { id: string; title: string; done: boolean; pinned: boolean };
+type Todo = { id: string; title: string; done: boolean; pinned: boolean; due?: string };
 
 type Undo =
   | { kind: 'delete'; todo: Todo; index: number }
@@ -49,6 +50,25 @@ const isSort = (value: string | null | undefined): value is Sort =>
   SORT_NAMES.some((name) => name === value);
 
 const sameTitle = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+const DUE_FORMAT_ERROR = 'Use YYYY-MM-DD';
+
+function isValidDate(text: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return false;
+  const [year, month, day] = match.slice(1).map(Number);
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+function today(): string {
+  const now = new Date(Date.now());
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+const isOverdue = (t: Todo) => !t.done && t.due !== undefined && t.due < today();
 
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -107,9 +127,12 @@ export default function TodoScreen() {
   const [draft, setDraft] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  const [editDue, setEditDue] = useState('');
+  const [dueInvalid, setDueInvalid] = useState(false);
   const [filter, setFilter] = useState<Filter>('All');
   const [sort, setSort] = useState<Sort>('Manual');
   const [query, setQuery] = useState('');
+  const [tag, setTag] = useState<string | null>(null);
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
   const colorScheme = useColorScheme();
@@ -143,11 +166,15 @@ export default function TodoScreen() {
   }, [todos, loaded]);
 
   const term = query.trim().toLowerCase();
+  const tags = listTags(todos.map((t) => t.title));
+  // A tag no title carries any more filters nothing, so the list never gets stuck empty.
+  const activeTag = tags.find((name) => tag !== null && tagKey(name) === tagKey(tag)) ?? null;
   const visibleTodos = pinnedFirst(SORTS[sort](todos))
     .filter(FILTERS[filter])
-    .filter((t) => t.title.toLowerCase().includes(term));
+    .filter((t) => t.title.toLowerCase().includes(term))
+    .filter((t) => !activeTag || titleTags(t.title).some((x) => tagKey(x) === tagKey(activeTag)));
   // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
-  const canReorder = filter === 'All' && !term;
+  const canReorder = filter === 'All' && !term && !activeTag;
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
@@ -211,14 +238,22 @@ export default function TodoScreen() {
     });
   }
 
+  function changeEditDue(text: string) {
+    setEditDue(text);
+    setDueInvalid(false);
+  }
+
   function startEditing(todo: Todo) {
     setEditingId(todo.id);
     setEditDraft(todo.title);
+    setEditDue(todo.due ?? '');
+    setDueInvalid(false);
     clearDuplicate('edit');
   }
 
   function cancelEdit() {
     setEditingId(null);
+    setDueInvalid(false);
     clearDuplicate('edit');
   }
 
@@ -230,11 +265,18 @@ export default function TodoScreen() {
       cancelEdit();
       return;
     }
+    const due = editDue.trim();
+    if (due && !isValidDate(due)) {
+      setDueInvalid(true);
+      return;
+    }
     if (todos.some((t) => t.id !== editingId && sameTitle(t.title, title))) {
       setDuplicateIn('edit');
       return;
     }
-    setTodos((current) => current.map((t) => (t.id === editingId ? { ...t, title } : t)));
+    setTodos((current) =>
+      current.map((t) => (t.id === editingId ? { ...t, title, due: due || undefined } : t))
+    );
     cancelEdit();
   }
 
@@ -343,13 +385,14 @@ export default function TodoScreen() {
             <Text>{`Sort: ${sort}`}</Text>
           </Pressable>
         </View>
+        <TagFilter tags={tags} selected={activeTag} onSelect={setTag} />
         <FlatList
           data={visibleTodos}
           keyboardShouldPersistTaps="handled"
           keyExtractor={(t) => t.id}
           ListEmptyComponent={
             <Text style={styles.empty}>
-              {term
+              {term || activeTag
                 ? 'No matching to-dos.'
                 : todos.length
                   ? `No ${filter.toLowerCase()} to-dos.`
@@ -378,6 +421,17 @@ export default function TodoScreen() {
                     </Pressable>
                   </View>
                 </View>
+                <TextInput
+                  style={[styles.input, styles.dueInput, { color: textColor }]}
+                  placeholder="Due date (YYYY-MM-DD)"
+                  placeholderTextColor="#999"
+                  value={editDue}
+                  onChangeText={changeEditDue}
+                  onSubmitEditing={saveEdit}
+                  returnKeyType="done"
+                  autoCorrect={false}
+                />
+                {dueInvalid && <Text style={styles.duplicate}>{DUE_FORMAT_ERROR}</Text>}
                 {duplicateIn === 'edit' && <Text style={styles.duplicate}>Already on the list.</Text>}
               </View>
             ) : (
@@ -391,13 +445,19 @@ export default function TodoScreen() {
                   hitSlop={8}>
                   <Text style={styles.check}>{item.done ? '☑' : '☐'}</Text>
                 </Pressable>
-                <Pressable
-                  style={styles.titlePress}
-                  onPress={() => startEditing(item)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Edit ${item.title}`}>
-                  <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
-                </Pressable>
+                <View style={styles.titlePress}>
+                  <Pressable
+                    onPress={() => startEditing(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${item.title}`}>
+                    <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
+                  </Pressable>
+                  {item.due && (
+                    <Text style={[styles.dueText, isOverdue(item) && styles.overdue]}>
+                      {isOverdue(item) ? 'Overdue' : `Due ${item.due}`}
+                    </Text>
+                  )}
+                </View>
               </View>
               {canReorder && (
                 <View style={styles.moveActions}>
@@ -590,6 +650,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 16,
     marginLeft: 12,
+  },
+  dueInput: {
+    flex: 0,
+    marginTop: 8,
+  },
+  dueText: {
+    fontSize: 13,
+    opacity: 0.7,
+  },
+  overdue: {
+    color: '#c0392b',
+    opacity: 1,
   },
   check: {
     fontSize: 22,
