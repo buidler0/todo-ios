@@ -990,4 +990,27 @@ describe('due dates', () => {
 
     expect(screen.getByText('Overdue')).toBeOnTheScreen();
   });
+
+  test('a date-only edit saves when the title repeats another to-do', async () => {
+    await AsyncStorage.setItem(
+      'todos',
+      JSON.stringify([
+        { ...withDue('Buy milk', null), id: 'first' },
+        { ...withDue('Buy milk', null), id: 'second' },
+      ])
+    );
+    render(<TodoScreen />);
+    await screen.findAllByText('Buy milk');
+
+    fireEvent.press(screen.getAllByRole('button', { name: 'Edit Buy milk' })[1]);
+    fireEvent.changeText(dateField('Buy milk'), '2026-11-05');
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.queryByText('Already on the list.')).toBeNull();
+    expect(screen.getByText('Due 2026-11-05')).toBeOnTheScreen();
+    expect(await savedTodos()).toMatchObject([
+      { id: 'first', due: null },
+      { id: 'second', due: '2026-11-05' },
+    ]);
+  });
 });

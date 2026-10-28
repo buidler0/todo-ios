@@ -247,7 +247,11 @@ export default function TodoScreen() {
       return;
     }
     const parsed = parseDue(editDue);
-    const duplicate = todos.some((t) => t.id !== editingId && sameTitle(t.title, title));
+    const editing = todos.find((t) => t.id === editingId);
+    const duplicate =
+      !!editing &&
+      !sameTitle(editing.title, title) &&
+      todos.some((t) => t.id !== editingId && sameTitle(t.title, title));
     if (!parsed.ok || duplicate) {
       setDueInvalid(!parsed.ok);
       if (duplicate) setDuplicateIn('edit');
