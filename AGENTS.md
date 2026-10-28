@@ -1,6 +1,6 @@
 # todo-ios
 
-A one-screen Expo app; [README.md](README.md) says what it does and how to run it.
+A two-tab Expo app (To-dos and Stats); [README.md](README.md) says what it does and how to run it.
 
 ## Checking a change on the iOS simulator
 
