@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { AppState } from 'react-native';
 
 import TodoScreen from '@/app/(tabs)/index';
 
@@ -7,7 +8,11 @@ jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
 );
 
-beforeEach(() => AsyncStorage.clear());
+// Fake timers keep FlatList's batched renders and the undo timeout inside act().
+beforeEach(() => {
+  jest.useFakeTimers();
+  return AsyncStorage.clear();
+});
 afterEach(() => {
   jest.restoreAllMocks();
   jest.useRealTimers();
@@ -215,7 +220,6 @@ test('undoes a delete at the old position, keeping its done state', async () => 
 
 test('the undo offer expires after 5 seconds', async () => {
   await renderWithThree();
-  jest.useFakeTimers();
 
   fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
   act(() => jest.advanceTimersByTime(4999));
@@ -619,7 +623,6 @@ test('undoes mark all not done', async () => {
 
 test('the mark all undo offer expires after 5 seconds', async () => {
   await renderWithThree();
-  jest.useFakeTimers();
 
   fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
   act(() => jest.advanceTimersByTime(4999));
@@ -651,7 +654,6 @@ test('only the latest of a delete and a mark all can be undone', async () => {
 
 test('a mark all restarts the 5 second undo timer', async () => {
   await renderWithThree();
-  jest.useFakeTimers();
 
   fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
   act(() => jest.advanceTimersByTime(3000));
@@ -776,4 +778,274 @@ test('a to-do added before load that repeats a saved title is dropped', async ()
   expect(await screen.findByText('Old')).toBeOnTheScreen();
   expect(screen.queryByText('old')).toBeNull();
   expect(screen.getByRole('checkbox', { name: 'Old' })).toBeChecked();
+});
+
+function setDue(title: string, due: string) {
+  fireEvent.press(screen.getByRole('button', { name: `Edit ${title}` }));
+  fireEvent.changeText(screen.getByPlaceholderText('Due date (YYYY-MM-DD)'), due);
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+}
+
+test('sets a due date, shows it under the title, saves it and starts the next edit with it', async () => {
+  await renderWithThree();
+
+  setDue('Buy bread', '2999-11-03');
+
+  expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+  expect(screen.getByText('Due 2999-11-03')).toBeOnTheScreen();
+  expect(screen.getAllByText(/^Due /)).toHaveLength(1);
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved).toMatchObject([
+    { title: 'Buy milk' },
+    { title: 'Buy bread', due: '2999-11-03' },
+    { title: 'Buy eggs' },
+  ]);
+  expect(saved[0]).not.toHaveProperty('due');
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy bread' }));
+  expect(screen.getByPlaceholderText('Due date (YYYY-MM-DD)').props.value).toBe('2999-11-03');
+  fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
+  expect(screen.getByPlaceholderText('Due date (YYYY-MM-DD)').props.value).toBe('');
+});
+
+test('shows Overdue for a to-do not done whose date has passed, and the date once done', async () => {
+  await renderWithThree();
+  setDue('Buy milk', '2000-01-01');
+
+  expect(screen.getByText('Overdue')).toBeOnTheScreen();
+  expect(screen.queryByText('Due 2000-01-01')).toBeNull();
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+  expect(screen.getByText('Due 2000-01-01')).toBeOnTheScreen();
+  expect(screen.queryByText('Overdue')).toBeNull();
+});
+
+test('a to-do due today is not overdue, and one due yesterday is', async () => {
+  jest.useFakeTimers({ now: new Date(2026, 10, 3, 23, 59) });
+  await renderWithThree();
+
+  setDue('Buy milk', '2026-11-03');
+  setDue('Buy bread', '2026-11-02');
+
+  expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
+  expect(screen.getByText('Overdue')).toBeOnTheScreen();
+  expect(screen.queryByText('Due 2026-11-02')).toBeNull();
+});
+
+test('a to-do due today turns Overdue at the next midnight', async () => {
+  jest.useFakeTimers({ now: new Date(2026, 10, 3, 23, 59) });
+  await renderWithThree();
+  setDue('Buy milk', '2026-11-03');
+
+  act(() => jest.advanceTimersByTime(59_999));
+  expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
+
+  act(() => jest.advanceTimersByTime(1_001));
+  expect(screen.getByText('Overdue')).toBeOnTheScreen();
+  expect(screen.queryByText('Due 2026-11-03')).toBeNull();
+});
+
+test('a to-do due today shows Overdue when the app comes back on a later day', async () => {
+  jest.useFakeTimers({ now: new Date(2026, 10, 3, 9, 0) });
+  await renderWithThree();
+  setDue('Buy milk', '2026-11-03');
+
+  jest.setSystemTime(new Date(2026, 10, 4, 8, 0));
+  const onChange = jest.mocked(AppState.addEventListener).mock.calls.at(-1)![1];
+  act(() => onChange('background'));
+  expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
+
+  act(() => onChange('active'));
+  expect(screen.getByText('Overdue')).toBeOnTheScreen();
+});
+
+test('refuses a due date of the wrong shape or a day that does not exist, and stays in editing', async () => {
+  await renderWithThree();
+
+  for (const due of ['2026-2-3', 'tomorrow', '03-11-2026', '2026-02-30', '2026-13-01', '2027-02-29']) {
+    fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
+    fireEvent.changeText(screen.getByLabelText('Edit Buy milk'), 'Buy oat milk');
+    fireEvent.changeText(screen.getByPlaceholderText('Due date (YYYY-MM-DD)'), due);
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.getByText('Use YYYY-MM-DD')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeOnTheScreen();
+    expect(screen.getByPlaceholderText('Due date (YYYY-MM-DD)').props.value).toBe(due);
+    fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByText('Use YYYY-MM-DD')).toBeNull();
+  }
+
+  expect(titlesInOrder()).toEqual(['Buy milk', 'Buy bread', 'Buy eggs']);
+  expect(screen.queryByText(/^Due /)).toBeNull();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved.some((t: { due?: string }) => 'due' in t)).toBe(false);
+});
+
+test('the bad date message goes away on typing, and a leap day is accepted', async () => {
+  await renderWithThree();
+  setDue('Buy milk', '2028-02-30');
+  expect(screen.getByText('Use YYYY-MM-DD')).toBeOnTheScreen();
+
+  fireEvent.changeText(screen.getByPlaceholderText('Due date (YYYY-MM-DD)'), ' 2028-02-29 ');
+  expect(screen.queryByText('Use YYYY-MM-DD')).toBeNull();
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(screen.getByText('Due 2028-02-29')).toBeOnTheScreen();
+});
+
+test('clearing the due date removes it and saves the to-do without one', async () => {
+  await renderWithThree();
+  setDue('Buy eggs', '2999-01-01');
+  expect(screen.getByText('Due 2999-01-01')).toBeOnTheScreen();
+
+  setDue('Buy eggs', '');
+
+  expect(screen.queryByText('Due 2999-01-01')).toBeNull();
+  const saved = JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  expect(saved[2]).toMatchObject({ title: 'Buy eggs' });
+  expect(saved[2]).not.toHaveProperty('due');
+});
+
+test('a saved due date shows again after a relaunch', async () => {
+  await renderWithThree();
+  setDue('Buy bread', '2999-11-03');
+
+  screen.unmount();
+  render(<TodoScreen />);
+
+  expect(await screen.findByText('Due 2999-11-03')).toBeOnTheScreen();
+});
+
+test('saving an empty title still deletes the to-do whatever the due date says', async () => {
+  await renderWithThree();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Buy milk'), '');
+  fireEvent.changeText(screen.getByPlaceholderText('Due date (YYYY-MM-DD)'), 'soon');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(titlesInOrder()).toEqual(['Buy bread', 'Buy eggs']);
+  expect(screen.queryByText('Use YYYY-MM-DD')).toBeNull();
+});
+
+function tagNames() {
+  return screen.queryAllByRole('button', { name: /^Tag / }).map((b) => b.props.accessibilityLabel);
+}
+
+async function renderWithTags() {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('Buy milk #shop');
+  addTodo('Call mum #home #weekly');
+  addTodo('Buy bread #shop');
+  addTodo('Water plants');
+}
+
+test('lists every tag once, in first-seen order, and none without tags', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('Water plants');
+  addTodo('Price #1 or # alone');
+  expect(tagNames()).toEqual(['Tag #1']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Price #1 or # alone' }));
+  expect(tagNames()).toEqual([]);
+
+  addTodo('Buy milk #shop');
+  addTodo('Call mum #home #weekly');
+  addTodo('Buy bread #SHOP');
+  expect(tagNames()).toEqual(['Tag #shop', 'Tag #home', 'Tag #weekly']);
+  expect(screen.getByText('#shop')).toBeOnTheScreen();
+});
+
+test('a tag shows only its to-dos, and pressing it again clears it', async () => {
+  await renderWithTags();
+  const shop = screen.getByRole('button', { name: 'Tag #shop' });
+  expect(shop).not.toBeSelected();
+
+  fireEvent.press(shop);
+  expect(screen.getByRole('button', { name: 'Tag #shop' })).toBeSelected();
+  expect(screen.getByRole('button', { name: 'Tag #home' })).not.toBeSelected();
+  expect(titlesInOrder()).toEqual(['Buy milk #shop', 'Buy bread #shop']);
+  expect(screen.getByText('4 items left')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #home' }));
+  expect(screen.getByRole('button', { name: 'Tag #shop' })).not.toBeSelected();
+  expect(titlesInOrder()).toEqual(['Call mum #home #weekly']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #home' }));
+  expect(screen.getByRole('button', { name: 'Tag #home' })).not.toBeSelected();
+  expect(titlesInOrder()).toHaveLength(4);
+});
+
+test('a tag works on top of the filter and the search', async () => {
+  await renderWithTags();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk #shop' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #shop' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(titlesInOrder()).toEqual(['Buy bread #shop']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(titlesInOrder()).toEqual(['Buy milk #shop']);
+  expect(screen.getByRole('button', { name: 'Tag #shop' })).toBeSelected();
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk #shop' }));
+  expect(screen.getByText('No done to-dos tagged #shop.')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'bread');
+  expect(titlesInOrder()).toEqual(['Buy bread #shop']);
+});
+
+test('a tag matches whatever its case, keeping its first spelling', async () => {
+  await renderWithTags();
+  addTodo('Buy eggs #Shop');
+
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #shop' }));
+  expect(titlesInOrder()).toEqual(['Buy milk #shop', 'Buy bread #shop', 'Buy eggs #Shop']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk #shop' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy bread #shop' }));
+  expect(screen.getByRole('button', { name: 'Tag #Shop' })).toBeSelected();
+  expect(titlesInOrder()).toEqual(['Buy eggs #Shop']);
+});
+
+test('the tag clears when no to-do has it any more', async () => {
+  await renderWithTags();
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #home' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Call mum #home #weekly' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Call mum #home #weekly'), 'Call mum #weekly');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(tagNames()).toEqual(['Tag #shop', 'Tag #weekly']);
+  expect(titlesInOrder()).toHaveLength(4);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Call mum #weekly' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Call mum #weekly'), 'Call mum #home');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  expect(screen.getByRole('button', { name: 'Tag #home' })).not.toBeSelected();
+});
+
+test('moving is not offered while a tag is selected', async () => {
+  await renderWithTags();
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #shop' }));
+  expect(screen.queryByRole('button', { name: /^Move / })).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #shop' }));
+  expect(screen.getByRole('button', { name: 'Move Buy bread #shop up' })).toBeOnTheScreen();
+});
+
+test('the selected tag is never saved', async () => {
+  await renderWithTags();
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #shop' }));
+  expect(await AsyncStorage.getAllKeys()).toEqual(['todos']);
+
+  screen.unmount();
+  render(<TodoScreen />);
+  await screen.findByRole('checkbox', { name: 'Water plants' });
+  expect(screen.getByRole('button', { name: 'Tag #shop' })).not.toBeSelected();
+  expect(titlesInOrder()).toHaveLength(4);
 });
