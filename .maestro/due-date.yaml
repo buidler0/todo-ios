@@ -1,0 +1,51 @@
+appId: com.buidler0.todoios
+---
+- launchApp:
+    clearState: true
+- swipe:
+    direction: DOWN
+    duration: 100
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- tapOn: "What needs doing?"
+- inputText: "Pay rent"
+- tapOn: "Add"
+- tapOn: "Edit Pay rent"
+- tapOn: "Due date (YYYY-MM-DD)"
+- inputText: "2026-02-30"
+- tapOn: "Save"
+- assertVisible: "Use YYYY-MM-DD"
+- tapOn: "Due date for Pay rent"
+- eraseText: 20
+- inputText: "2099-11-03"
+- tapOn: "Save"
+- assertVisible: "Due 2099-11-03"
+- assertNotVisible: "Use YYYY-MM-DD"
+- tapOn: "Edit Pay rent"
+- assertVisible: "2099-11-03"
+- tapOn: "Due date for Pay rent"
+- eraseText: 20
+- inputText: "2020-01-01"
+- tapOn: "Save"
+- assertVisible: "Overdue"
+- assertNotVisible: "Due 2020-01-01"
+- tapOn: "Pay rent"
+- assertVisible: "Due 2020-01-01"
+- assertNotVisible: "Overdue"
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible:
+      text: "All"
+      enabled: true
+    timeout: 20000
+- assertVisible: "Due 2020-01-01"
+- tapOn: "Edit Pay rent"
+- tapOn: "Due date for Pay rent"
+- eraseText: 20
+- tapOn: "Save"
+- assertNotVisible: "Due 2020-01-01"
+- assertVisible: "Pay rent"
