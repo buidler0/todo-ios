@@ -927,3 +927,124 @@ test('saving an empty title still deletes the to-do whatever the due date says',
   expect(titlesInOrder()).toEqual(['Buy bread', 'Buy eggs']);
   expect(screen.queryByText('Use YYYY-MM-DD')).toBeNull();
 });
+
+function tagNames() {
+  return screen.queryAllByRole('button', { name: /^Tag / }).map((b) => b.props.accessibilityLabel);
+}
+
+async function renderWithTags() {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('Buy milk #shop');
+  addTodo('Call mum #home #weekly');
+  addTodo('Buy bread #shop');
+  addTodo('Water plants');
+}
+
+test('lists every tag once, in first-seen order, and none without tags', async () => {
+  render(<TodoScreen />);
+  await screen.findByText('Nothing to do yet.');
+  addTodo('Water plants');
+  addTodo('Price #1 or # alone');
+  expect(tagNames()).toEqual(['Tag #1']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Price #1 or # alone' }));
+  expect(tagNames()).toEqual([]);
+
+  addTodo('Buy milk #shop');
+  addTodo('Call mum #home #weekly');
+  addTodo('Buy bread #SHOP');
+  expect(tagNames()).toEqual(['Tag #shop', 'Tag #home', 'Tag #weekly']);
+  expect(screen.getByText('#shop')).toBeOnTheScreen();
+});
+
+test('a tag shows only its to-dos, and pressing it again clears it', async () => {
+  await renderWithTags();
+  const shop = screen.getByRole('button', { name: 'Tag #shop' });
+  expect(shop).not.toBeSelected();
+
+  fireEvent.press(shop);
+  expect(screen.getByRole('button', { name: 'Tag #shop' })).toBeSelected();
+  expect(screen.getByRole('button', { name: 'Tag #home' })).not.toBeSelected();
+  expect(titlesInOrder()).toEqual(['Buy milk #shop', 'Buy bread #shop']);
+  expect(screen.getByText('4 items left')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #home' }));
+  expect(screen.getByRole('button', { name: 'Tag #shop' })).not.toBeSelected();
+  expect(titlesInOrder()).toEqual(['Call mum #home #weekly']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #home' }));
+  expect(screen.getByRole('button', { name: 'Tag #home' })).not.toBeSelected();
+  expect(titlesInOrder()).toHaveLength(4);
+});
+
+test('a tag works on top of the filter and the search', async () => {
+  await renderWithTags();
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk #shop' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #shop' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Active' }));
+  expect(titlesInOrder()).toEqual(['Buy bread #shop']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Done' }));
+  expect(titlesInOrder()).toEqual(['Buy milk #shop']);
+  expect(screen.getByRole('button', { name: 'Tag #shop' })).toBeSelected();
+
+  fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk #shop' }));
+  expect(screen.getByText('No done to-dos tagged #shop.')).toBeOnTheScreen();
+
+  fireEvent.press(screen.getByRole('button', { name: 'All' }));
+  fireEvent.changeText(screen.getByPlaceholderText('Search to-dos'), 'bread');
+  expect(titlesInOrder()).toEqual(['Buy bread #shop']);
+});
+
+test('a tag matches whatever its case, keeping its first spelling', async () => {
+  await renderWithTags();
+  addTodo('Buy eggs #Shop');
+
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #shop' }));
+  expect(titlesInOrder()).toEqual(['Buy milk #shop', 'Buy bread #shop', 'Buy eggs #Shop']);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk #shop' }));
+  fireEvent.press(screen.getByRole('button', { name: 'Delete Buy bread #shop' }));
+  expect(screen.getByRole('button', { name: 'Tag #Shop' })).toBeSelected();
+  expect(titlesInOrder()).toEqual(['Buy eggs #Shop']);
+});
+
+test('the tag clears when no to-do has it any more', async () => {
+  await renderWithTags();
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #home' }));
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Call mum #home #weekly' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Call mum #home #weekly'), 'Call mum #weekly');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+  expect(tagNames()).toEqual(['Tag #shop', 'Tag #weekly']);
+  expect(titlesInOrder()).toHaveLength(4);
+
+  fireEvent.press(screen.getByRole('button', { name: 'Edit Call mum #weekly' }));
+  fireEvent.changeText(screen.getByLabelText('Edit Call mum #weekly'), 'Call mum #home');
+  fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+  expect(screen.getByRole('button', { name: 'Tag #home' })).not.toBeSelected();
+});
+
+test('moving is not offered while a tag is selected', async () => {
+  await renderWithTags();
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #shop' }));
+  expect(screen.queryByRole('button', { name: /^Move / })).toBeNull();
+
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #shop' }));
+  expect(screen.getByRole('button', { name: 'Move Buy bread #shop up' })).toBeOnTheScreen();
+});
+
+test('the selected tag is never saved', async () => {
+  await renderWithTags();
+  fireEvent.press(screen.getByRole('button', { name: 'Tag #shop' }));
+  expect(await AsyncStorage.getAllKeys()).toEqual(['todos']);
+
+  screen.unmount();
+  render(<TodoScreen />);
+  await screen.findByRole('checkbox', { name: 'Water plants' });
+  expect(screen.getByRole('button', { name: 'Tag #shop' })).not.toBeSelected();
+  expect(titlesInOrder()).toHaveLength(4);
+});

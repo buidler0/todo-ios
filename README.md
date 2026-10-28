@@ -1,5 +1,5 @@
 # To-do (iOS)
-A one-screen iOS to-do app (add, tick done, edit, delete with undo, filter by All/Active/Done, count what's left, clear completed, pin, undo mark all, remembered filter, due dates with overdue flag, kept between launches) built by a crew of coding agents as a practice app. Expo SDK 57 + Expo Router + TypeScript, run as its own iPhone app (no Expo Go).
+A one-screen iOS to-do app (add, tick done, edit, delete with undo, filter by All/Active/Done, filter by #tag, count what's left, clear completed, pin, undo mark all, remembered filter, due dates with overdue flag, kept between launches) built by a crew of coding agents as a practice app. Expo SDK 57 + Expo Router + TypeScript, run as its own iPhone app (no Expo Go).
 
 Stage: prototype · Works: yes (checked 2026-10-27) · Next: try add, tick, edit and delete on the simulator · Decide by: 2026-11-23
 Why: a small, real app for practising agent-driven development with firstmate and no-mistakes.
