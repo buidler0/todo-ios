@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
+import { AppState } from 'react-native';
+
 import TodoScreen from '@/app/(tabs)/index';
 
 jest.mock('@react-native-async-storage/async-storage', () =>
@@ -963,5 +965,29 @@ describe('due dates', () => {
 
     expect(screen.queryByText(/^Due /)).toBeNull();
     expect(screen.queryByText('Overdue')).toBeNull();
+  });
+
+  test('Overdue appears when the app stays open past midnight', async () => {
+    jest.setSystemTime(new Date(2026, 10, 3, 23, 59));
+    await openSaved(withDue('Buy milk', '2026-11-03'));
+    expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
+
+    act(() => {
+      jest.advanceTimersByTime(2 * 60 * 1000);
+    });
+
+    expect(screen.getByText('Overdue')).toBeOnTheScreen();
+  });
+
+  test('Overdue appears when the app resumes the next day', async () => {
+    const addListener = jest.spyOn(AppState, 'addEventListener');
+    await openSaved(withDue('Buy milk', '2026-11-03'));
+    expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
+    const onChange = addListener.mock.calls.at(-1)![1] as (state: string) => void;
+
+    jest.setSystemTime(new Date(2026, 10, 4, 8));
+    act(() => onChange('active'));
+
+    expect(screen.getByText('Overdue')).toBeOnTheScreen();
   });
 });
