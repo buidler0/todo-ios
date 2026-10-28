@@ -15,8 +15,8 @@ import {
 import { Text, View, useThemeColor } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import { TODOS_KEY } from '@/constants/Storage';
 
-const STORAGE_KEY = 'todos';
 const FILTER_KEY = 'filter';
 const UNDO_MS = 5000;
 
@@ -146,7 +146,7 @@ export default function TodoScreen() {
   const [windowY, setWindowY] = useState(0);
 
   useEffect(() => {
-    AsyncStorage.multiGet([STORAGE_KEY, FILTER_KEY]).then(([[, saved], [, savedFilter]]) => {
+    AsyncStorage.multiGet([TODOS_KEY, FILTER_KEY]).then(([[, saved], [, savedFilter]]) => {
       if (isFilter(savedFilter)) setFilter(savedFilter);
       if (saved) {
         const stored: (Omit<Todo, 'pinned'> & { pinned?: boolean })[] = JSON.parse(saved);
@@ -165,7 +165,7 @@ export default function TodoScreen() {
 
   useEffect(() => {
     // Skip the first render so the empty initial list never overwrites saved to-dos.
-    if (loaded) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(todos));
+    if (loaded) AsyncStorage.setItem(TODOS_KEY, JSON.stringify(todos));
   }, [todos, loaded]);
 
   const tags = allTags(todos);

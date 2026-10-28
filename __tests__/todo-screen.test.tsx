@@ -8,7 +8,11 @@ jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock')
 );
 
-beforeEach(() => AsyncStorage.clear());
+// Fake timers keep FlatList's batched renders and the undo timeout inside act().
+beforeEach(() => {
+  jest.useFakeTimers();
+  return AsyncStorage.clear();
+});
 afterEach(() => {
   jest.restoreAllMocks();
   jest.useRealTimers();
@@ -216,7 +220,6 @@ test('undoes a delete at the old position, keeping its done state', async () => 
 
 test('the undo offer expires after 5 seconds', async () => {
   await renderWithThree();
-  jest.useFakeTimers();
 
   fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
   act(() => jest.advanceTimersByTime(4999));
@@ -620,7 +623,6 @@ test('undoes mark all not done', async () => {
 
 test('the mark all undo offer expires after 5 seconds', async () => {
   await renderWithThree();
-  jest.useFakeTimers();
 
   fireEvent.press(screen.getByRole('button', { name: 'Mark all done' }));
   act(() => jest.advanceTimersByTime(4999));
@@ -652,7 +654,6 @@ test('only the latest of a delete and a mark all can be undone', async () => {
 
 test('a mark all restarts the 5 second undo timer', async () => {
   await renderWithThree();
-  jest.useFakeTimers();
 
   fireEvent.press(screen.getByRole('button', { name: 'Delete Buy milk' }));
   act(() => jest.advanceTimersByTime(3000));
