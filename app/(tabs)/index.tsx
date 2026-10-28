@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View as NativeView,
@@ -13,6 +14,7 @@ import {
 import { Text, View, useThemeColor } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import { hasTag, tagsOf, type Tag } from '@/lib/tags';
 
 const STORAGE_KEY = 'todos';
 const FILTER_KEY = 'filter';
@@ -53,6 +55,12 @@ const pinnedFirst = (list: Todo[]) => [
   ...list.filter((t) => !t.pinned),
 ];
 
+function emptyMessage(term: string, tag: Tag | null, filter: Filter, hasTodos: boolean): string {
+  if (term) return 'No matching to-dos.';
+  if (tag) return `No ${filter.toLowerCase()} to-dos tagged ${tag.label}.`;
+  return hasTodos ? `No ${filter.toLowerCase()} to-dos.` : 'Nothing to do yet.';
+}
+
 function groupNeighbour(list: Todo[], id: string, offset: -1 | 1): number {
   const from = list.findIndex((t) => t.id === id);
   if (from < 0) return -1;
@@ -88,6 +96,32 @@ function MoveButton({
   );
 }
 
+function Chip({
+  label,
+  accessibilityLabel,
+  selected,
+  disabled,
+  onPress,
+}: {
+  label: string;
+  accessibilityLabel?: string;
+  selected: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={[styles.chip, selected && { backgroundColor: Colors.light.tint }]}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityState={{ selected, disabled }}>
+      <Text style={selected && styles.chipSelectedText}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export default function TodoScreen() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -96,6 +130,7 @@ export default function TodoScreen() {
   const [editDraft, setEditDraft] = useState('');
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
+  const [tagKey, setTagKey] = useState<string | null>(null);
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
   const colorScheme = useColorScheme();
@@ -128,11 +163,15 @@ export default function TodoScreen() {
   }, [todos, loaded]);
 
   const term = query.trim().toLowerCase();
-  const visibleTodos = pinnedFirst(todos)
-    .filter(FILTERS[filter])
-    .filter((t) => t.title.toLowerCase().includes(term));
-  // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
-  const canReorder = filter === 'All' && !term;
+  const tags = tagsOf(todos);
+  const activeTag = tags.find((tag) => tag.key === tagKey) ?? null;
+  if (tagKey !== null && !activeTag) setTagKey(null);
+  const narrowings: ((t: Todo) => boolean)[] = [];
+  if (filter !== 'All') narrowings.push(FILTERS[filter]);
+  if (term) narrowings.push((t) => t.title.toLowerCase().includes(term));
+  if (activeTag) narrowings.push((t) => hasTag(t.title, activeTag.key));
+  const visibleTodos = pinnedFirst(todos).filter((t) => narrowings.every((keep) => keep(t)));
+  const showsFullList = narrowings.length === 0;
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
@@ -144,6 +183,10 @@ export default function TodoScreen() {
   function selectFilter(name: Filter) {
     setFilter(name);
     AsyncStorage.setItem(FILTER_KEY, name);
+  }
+
+  function toggleTag(key: string) {
+    setTagKey((current) => (current === key ? null : key));
   }
 
   function clearDuplicate(source: 'add' | 'edit') {
@@ -299,32 +342,44 @@ export default function TodoScreen() {
           {FILTER_NAMES.map((name) => {
             const selected = name === filter;
             return (
-              <Pressable
+              <Chip
                 key={name}
-                style={[
-                  styles.filterButton,
-                  selected && { backgroundColor: Colors.light.tint },
-                ]}
-                onPress={() => selectFilter(name)}
+                label={name}
+                selected={selected}
                 disabled={!loaded}
-                accessibilityRole="button"
-                accessibilityState={{ selected, disabled: !loaded }}>
-                <Text style={selected && styles.filterSelectedText}>{name}</Text>
-              </Pressable>
+                onPress={() => selectFilter(name)}
+              />
             );
           })}
         </View>
+        {tags.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            style={styles.tags}
+            contentContainerStyle={styles.tagsContent}>
+            {tags.map((tag) => {
+              const selected = tag.key === activeTag?.key;
+              return (
+                <Chip
+                  key={tag.key}
+                  label={tag.label}
+                  accessibilityLabel={`Tag ${tag.label}`}
+                  selected={selected}
+                  onPress={() => toggleTag(tag.key)}
+                />
+              );
+            })}
+          </ScrollView>
+        )}
         <FlatList
           data={visibleTodos}
           keyboardShouldPersistTaps="handled"
           keyExtractor={(t) => t.id}
           ListEmptyComponent={
             <Text style={styles.empty}>
-              {term
-                ? 'No matching to-dos.'
-                : todos.length
-                  ? `No ${filter.toLowerCase()} to-dos.`
-                  : 'Nothing to do yet.'}
+              {emptyMessage(term, activeTag, filter, todos.length > 0)}
             </Text>
           }
           renderItem={({ item }) =>
@@ -370,7 +425,7 @@ export default function TodoScreen() {
                   <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
                 </Pressable>
               </View>
-              {canReorder && (
+              {showsFullList && (
                 <View style={styles.moveActions}>
                   <MoveButton
                     label={`Move ${item.title} up`}
@@ -501,14 +556,23 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 8,
   },
-  filterButton: {
+  tags: {
+    flexGrow: 0,
+    flexShrink: 0,
+    marginBottom: 8,
+  },
+  tagsContent: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  chip: {
     borderWidth: 1,
     borderColor: Colors.light.tint,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  filterSelectedText: {
+  chipSelectedText: {
     color: '#fff',
   },
   footer: {
