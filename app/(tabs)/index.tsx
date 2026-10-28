@@ -10,6 +10,7 @@ import {
   View as NativeView,
 } from 'react-native';
 
+import { TagBar, useTagFilter } from '@/components/TagFilter';
 import { Text, View, useThemeColor } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { DueLabel } from '@/components/DueLabel';
@@ -103,6 +104,7 @@ export default function TodoScreen() {
   const [query, setQuery] = useState('');
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
+  const tagFilter = useTagFilter(todos);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
   const backgroundColor = useThemeColor({}, 'background');
@@ -136,9 +138,10 @@ export default function TodoScreen() {
   const term = query.trim().toLowerCase();
   const visibleTodos = pinnedFirst(todos)
     .filter(FILTERS[filter])
-    .filter((t) => t.title.toLowerCase().includes(term));
+    .filter((t) => t.title.toLowerCase().includes(term))
+    .filter(tagFilter.matches);
   // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
-  const canReorder = filter === 'All' && !term;
+  const canReorder = filter === 'All' && !term && !tagFilter.selected;
   const remaining = todos.filter((t) => !t.done).length;
   const today = useToday();
 
@@ -336,6 +339,7 @@ export default function TodoScreen() {
             );
           })}
         </View>
+        <TagBar tagFilter={tagFilter} disabled={!loaded} />
         <FlatList
           data={visibleTodos}
           keyboardShouldPersistTaps="handled"
@@ -344,9 +348,11 @@ export default function TodoScreen() {
             <Text style={styles.empty}>
               {term
                 ? 'No matching to-dos.'
-                : todos.length
-                  ? `No ${filter.toLowerCase()} to-dos.`
-                  : 'Nothing to do yet.'}
+                : tagFilter.selected
+                  ? `No ${filter.toLowerCase()} to-dos tagged ${tagFilter.selected}.`
+                  : todos.length
+                    ? `No ${filter.toLowerCase()} to-dos.`
+                    : 'Nothing to do yet.'}
             </Text>
           }
           renderItem={({ item }) =>
