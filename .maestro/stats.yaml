@@ -31,7 +31,10 @@ appId: com.buidler0.todoios
 - tapOn: "Add"
 - tapOn: "What needs doing?"
 - inputText: "Post letter"
-- tapOn: "Add"
+# Return adds it like Add, and also closes the software keyboard,
+# which would otherwise cover the tab bar on simulators that show it.
+- pressKey: Enter
+- assertVisible: "Post letter"
 - tapOn: "Buy milk"
 - tapOn: "Buy bread"
 - assertVisible: "3 items left"
