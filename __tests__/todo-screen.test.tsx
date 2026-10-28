@@ -1,6 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
+import { AppState } from 'react-native';
+
 import TodoScreen from '@/app/(tabs)/index';
 
 jest.mock('@react-native-async-storage/async-storage', () =>
@@ -776,4 +778,239 @@ test('a to-do added before load that repeats a saved title is dropped', async ()
   expect(await screen.findByText('Old')).toBeOnTheScreen();
   expect(screen.queryByText('old')).toBeNull();
   expect(screen.getByRole('checkbox', { name: 'Old' })).toBeChecked();
+});
+
+describe('due dates', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({ now: new Date(2026, 10, 3, 12) });
+  });
+
+  const withDue = (title: string, due: string | null, done = false) => ({
+    id: title,
+    title,
+    done,
+    due,
+  });
+
+  async function openSaved(...todos: ReturnType<typeof withDue>[]) {
+    await AsyncStorage.setItem('todos', JSON.stringify(todos));
+    render(<TodoScreen />);
+    await screen.findByText(todos[0].title);
+  }
+
+  function editDue(title: string, text: string) {
+    fireEvent.press(screen.getByRole('button', { name: `Edit ${title}` }));
+    fireEvent.changeText(screen.getByLabelText(`Due date for ${title}`), text);
+  }
+
+  const dateField = (title: string) => screen.getByLabelText(`Due date for ${title}`);
+
+  async function savedTodos() {
+    return JSON.parse((await AsyncStorage.getItem('todos')) ?? '[]');
+  }
+
+  test('sets a due date in the edit form and shows it under the title', async () => {
+    render(<TodoScreen />);
+    await screen.findByText('Nothing to do yet.');
+    addTodo('Buy milk');
+    expect(screen.queryByText(/^Due /)).toBeNull();
+
+    editDue('Buy milk', '2026-11-05');
+    expect(screen.getByPlaceholderText('Due date (YYYY-MM-DD)')).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.getByText('Due 2026-11-05')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Edit Buy milk' })).toBeOnTheScreen();
+    expect(await savedTodos()).toMatchObject([{ title: 'Buy milk', due: '2026-11-05' }]);
+  });
+
+  test('the date field starts with the current date, and saving it unchanged keeps it', async () => {
+    await openSaved(withDue('Buy milk', '2026-11-05'));
+
+    fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
+    expect(dateField('Buy milk').props.value).toBe('2026-11-05');
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.getByText('Due 2026-11-05')).toBeOnTheScreen();
+  });
+
+  test('clearing the date field removes the date', async () => {
+    await openSaved(withDue('Buy milk', '2026-11-05'));
+
+    editDue('Buy milk', '');
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.queryByText(/^Due /)).toBeNull();
+    expect((await savedTodos())[0].due).toBeNull();
+  });
+
+  test('a to-do that is not done and due before today shows Overdue instead of its date', async () => {
+    await openSaved(withDue('Buy milk', '2026-11-02'));
+
+    expect(screen.getByText('Overdue')).toBeOnTheScreen();
+    expect(screen.queryByText('Due 2026-11-02')).toBeNull();
+  });
+
+  test('a to-do due today is not overdue', async () => {
+    await openSaved(withDue('Buy milk', '2026-11-03'));
+
+    expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
+    expect(screen.queryByText('Overdue')).toBeNull();
+  });
+
+  test('a done to-do past its date shows the date, and Overdue returns when it is ticked back', async () => {
+    await openSaved(withDue('Buy milk', '2026-11-02', true));
+    expect(screen.getByText('Due 2026-11-02')).toBeOnTheScreen();
+
+    fireEvent.press(screen.getByRole('checkbox', { name: 'Buy milk' }));
+
+    expect(screen.getByText('Overdue')).toBeOnTheScreen();
+  });
+
+  test.each(['3 Nov', '2026-1-3', '2026-02-30'])(
+    'refuses %j with a message and keeps the edit open',
+    async (text) => {
+      await openSaved(withDue('Buy milk', '2026-11-05'));
+
+      editDue('Buy milk', text);
+      fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+      expect(screen.getByText('Use YYYY-MM-DD')).toBeOnTheScreen();
+      expect(dateField('Buy milk').props.value).toBe(text);
+      expect((await savedTodos())[0].due).toBe('2026-11-05');
+    }
+  );
+
+  test('the date message goes away on typing in the date field and on cancel', async () => {
+    await openSaved(withDue('Buy milk', null));
+
+    editDue('Buy milk', 'soon');
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    fireEvent.changeText(dateField('Buy milk'), '2026-11');
+    expect(screen.queryByText('Use YYYY-MM-DD')).toBeNull();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByText('Use YYYY-MM-DD')).toBeOnTheScreen();
+    fireEvent.press(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Edit Buy milk' }));
+    expect(screen.queryByText('Use YYYY-MM-DD')).toBeNull();
+  });
+
+  test('ignores spaces around the date and saves it trimmed', async () => {
+    await openSaved(withDue('Buy milk', null));
+
+    editDue('Buy milk', '  2026-11-05 ');
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    expect((await savedTodos())[0].due).toBe('2026-11-05');
+  });
+
+  test('pressing return in the date field saves the edit', async () => {
+    await openSaved(withDue('Buy milk', null));
+
+    editDue('Buy milk', '2026-11-05');
+    fireEvent(dateField('Buy milk'), 'submitEditing');
+
+    expect(screen.getByText('Due 2026-11-05')).toBeOnTheScreen();
+  });
+
+  test('a bad date and a duplicate title show both messages', async () => {
+    await openSaved(withDue('Buy milk', null), withDue('Buy bread', null));
+
+    editDue('Buy bread', 'soon');
+    fireEvent.changeText(screen.getByLabelText('Edit Buy bread'), 'buy milk');
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.getByText('Use YYYY-MM-DD')).toBeOnTheScreen();
+    expect(screen.getByText('Already on the list.')).toBeOnTheScreen();
+  });
+
+  test('saving the title empty deletes the to-do even with a date typed, and Undo restores its date', async () => {
+    await openSaved(withDue('Buy milk', '2026-11-05'));
+
+    editDue('Buy milk', 'soon');
+    fireEvent.changeText(screen.getByLabelText('Edit Buy milk'), '');
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    expect(screen.getByText('Nothing to do yet.')).toBeOnTheScreen();
+
+    fireEvent.press(screen.getByRole('button', { name: 'Undo' }));
+
+    expect(screen.getByText('Due 2026-11-05')).toBeOnTheScreen();
+  });
+
+  test('a saved date shows again on the next launch', async () => {
+    const first = render(<TodoScreen />);
+    await screen.findByText('Nothing to do yet.');
+    addTodo('Buy milk');
+    editDue('Buy milk', '2026-11-05');
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+    first.unmount();
+
+    render(<TodoScreen />);
+
+    expect(await screen.findByText('Due 2026-11-05')).toBeOnTheScreen();
+  });
+
+  test('a saved list without dates, or with a broken date, loads with no date lines', async () => {
+    await AsyncStorage.setItem(
+      'todos',
+      JSON.stringify([
+        { id: '1', title: 'Old', done: false },
+        { id: '2', title: 'Odd', done: false, due: '2026-02-30' },
+        { id: '3', title: 'Num', done: false, due: 20261103 },
+      ])
+    );
+    render(<TodoScreen />);
+    await screen.findByText('Old');
+
+    expect(screen.queryByText(/^Due /)).toBeNull();
+    expect(screen.queryByText('Overdue')).toBeNull();
+  });
+
+  test('Overdue appears when the app stays open past midnight', async () => {
+    jest.setSystemTime(new Date(2026, 10, 3, 23, 59));
+    await openSaved(withDue('Buy milk', '2026-11-03'));
+    expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
+
+    act(() => {
+      jest.advanceTimersByTime(2 * 60 * 1000);
+    });
+
+    expect(screen.getByText('Overdue')).toBeOnTheScreen();
+  });
+
+  test('Overdue appears when the app resumes the next day', async () => {
+    const addListener = jest.spyOn(AppState, 'addEventListener');
+    await openSaved(withDue('Buy milk', '2026-11-03'));
+    expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
+    const onChange = addListener.mock.calls.at(-1)![1] as (state: string) => void;
+
+    jest.setSystemTime(new Date(2026, 10, 4, 8));
+    act(() => onChange('active'));
+
+    expect(screen.getByText('Overdue')).toBeOnTheScreen();
+  });
+
+  test('a date-only edit saves when the title repeats another to-do', async () => {
+    await AsyncStorage.setItem(
+      'todos',
+      JSON.stringify([
+        { ...withDue('Buy milk', null), id: 'first' },
+        { ...withDue('Buy milk', null), id: 'second' },
+      ])
+    );
+    render(<TodoScreen />);
+    await screen.findAllByText('Buy milk');
+
+    fireEvent.press(screen.getAllByRole('button', { name: 'Edit Buy milk' })[1]);
+    fireEvent.changeText(dateField('Buy milk'), '2026-11-05');
+    fireEvent.press(screen.getByRole('button', { name: 'Save' }));
+
+    expect(screen.queryByText('Already on the list.')).toBeNull();
+    expect(screen.getByText('Due 2026-11-05')).toBeOnTheScreen();
+    expect(await savedTodos()).toMatchObject([
+      { id: 'first', due: null },
+      { id: 'second', due: '2026-11-05' },
+    ]);
+  });
 });
