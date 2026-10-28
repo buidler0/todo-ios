@@ -10,15 +10,19 @@ import {
   View as NativeView,
 } from 'react-native';
 
+import { TagBar, useTagFilter } from '@/components/TagFilter';
 import { Text, View, useThemeColor } from '@/components/Themed';
 import Colors from '@/constants/Colors';
+import { DueLabel } from '@/components/DueLabel';
 import { useColorScheme } from '@/components/useColorScheme';
+import { useToday } from '@/components/useToday';
+import { parseDueInput, readDue, type DueDate } from '@/utils/dueDate';
 
 const STORAGE_KEY = 'todos';
 const FILTER_KEY = 'filter';
 const UNDO_MS = 5000;
 
-type Todo = { id: string; title: string; done: boolean; pinned: boolean };
+type Todo = { id: string; title: string; done: boolean; pinned: boolean; due?: DueDate };
 
 type Undo =
   | { kind: 'delete'; todo: Todo; index: number }
@@ -94,10 +98,13 @@ export default function TodoScreen() {
   const [draft, setDraft] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
+  const [editDue, setEditDue] = useState('');
+  const [dueInvalid, setDueInvalid] = useState(false);
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
+  const tagFilter = useTagFilter(todos);
   const colorScheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
   const backgroundColor = useThemeColor({}, 'background');
@@ -108,8 +115,9 @@ export default function TodoScreen() {
     AsyncStorage.multiGet([STORAGE_KEY, FILTER_KEY]).then(([[, saved], [, savedFilter]]) => {
       if (isFilter(savedFilter)) setFilter(savedFilter);
       if (saved) {
-        const stored: (Omit<Todo, 'pinned'> & { pinned?: boolean })[] = JSON.parse(saved);
-        const loadedTodos = stored.map((t) => ({ ...t, pinned: t.pinned === true }));
+        const stored: (Omit<Todo, 'pinned' | 'due'> & { pinned?: boolean; due?: unknown })[] =
+          JSON.parse(saved);
+        const loadedTodos = stored.map((t) => ({ ...t, pinned: t.pinned === true, due: readDue(t.due) }));
         // Keep to-dos added while the load was in flight, unless they repeat a saved title.
         setTodos((early) =>
           withUniqueIds([
@@ -130,10 +138,12 @@ export default function TodoScreen() {
   const term = query.trim().toLowerCase();
   const visibleTodos = pinnedFirst(todos)
     .filter(FILTERS[filter])
-    .filter((t) => t.title.toLowerCase().includes(term));
+    .filter((t) => t.title.toLowerCase().includes(term))
+    .filter(tagFilter.matches);
   // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
-  const canReorder = filter === 'All' && !term;
+  const canReorder = filter === 'All' && !term && !tagFilter.selected;
   const remaining = todos.filter((t) => !t.done).length;
+  const today = useToday();
 
   useEffect(() => {
     if (!undo) return;
@@ -190,14 +200,22 @@ export default function TodoScreen() {
     });
   }
 
+  function changeEditDue(text: string) {
+    setEditDue(text);
+    setDueInvalid(false);
+  }
+
   function startEditing(todo: Todo) {
     setEditingId(todo.id);
     setEditDraft(todo.title);
+    setEditDue(todo.due ?? '');
+    setDueInvalid(false);
     clearDuplicate('edit');
   }
 
   function cancelEdit() {
     setEditingId(null);
+    setDueInvalid(false);
     clearDuplicate('edit');
   }
 
@@ -209,11 +227,18 @@ export default function TodoScreen() {
       cancelEdit();
       return;
     }
+    const parsed = parseDueInput(editDue);
+    if (!parsed.ok) {
+      setDueInvalid(true);
+      return;
+    }
     if (todos.some((t) => t.id !== editingId && sameTitle(t.title, title))) {
       setDuplicateIn('edit');
       return;
     }
-    setTodos((current) => current.map((t) => (t.id === editingId ? { ...t, title } : t)));
+    setTodos((current) =>
+      current.map((t) => (t.id === editingId ? { ...t, title, due: parsed.due } : t))
+    );
     cancelEdit();
   }
 
@@ -314,6 +339,7 @@ export default function TodoScreen() {
             );
           })}
         </View>
+        <TagBar tagFilter={tagFilter} disabled={!loaded} />
         <FlatList
           data={visibleTodos}
           keyboardShouldPersistTaps="handled"
@@ -322,15 +348,17 @@ export default function TodoScreen() {
             <Text style={styles.empty}>
               {term
                 ? 'No matching to-dos.'
-                : todos.length
-                  ? `No ${filter.toLowerCase()} to-dos.`
-                  : 'Nothing to do yet.'}
+                : tagFilter.selected
+                  ? `No ${filter.toLowerCase()} to-dos tagged ${tagFilter.selected}.`
+                  : todos.length
+                    ? `No ${filter.toLowerCase()} to-dos.`
+                    : 'Nothing to do yet.'}
             </Text>
           }
           renderItem={({ item }) =>
             item.id === editingId ? (
-              <View>
-                <View style={styles.row}>
+              <View style={styles.editBlock}>
+                <View style={[styles.row, styles.editRow]}>
                   <TextInput
                     style={[styles.input, { color: textColor }]}
                     value={editDraft}
@@ -349,6 +377,19 @@ export default function TodoScreen() {
                     </Pressable>
                   </View>
                 </View>
+                <TextInput
+                  style={[styles.input, styles.dueInput, { color: textColor }]}
+                  placeholder="Due date (YYYY-MM-DD)"
+                  placeholderTextColor="#999"
+                  value={editDue}
+                  onChangeText={changeEditDue}
+                  onSubmitEditing={saveEdit}
+                  returnKeyType="done"
+                  autoCorrect={false}
+                  keyboardType="numbers-and-punctuation"
+                  accessibilityLabel={`Due date for ${item.title}`}
+                />
+                {dueInvalid && <Text style={styles.duplicate}>Use YYYY-MM-DD</Text>}
                 {duplicateIn === 'edit' && <Text style={styles.duplicate}>Already on the list.</Text>}
               </View>
             ) : (
@@ -362,13 +403,16 @@ export default function TodoScreen() {
                   hitSlop={8}>
                   <Text style={styles.check}>{item.done ? '☑' : '☐'}</Text>
                 </Pressable>
-                <Pressable
-                  style={styles.titlePress}
-                  onPress={() => startEditing(item)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Edit ${item.title}`}>
-                  <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
-                </Pressable>
+                <View style={styles.titlePress}>
+                  <Pressable
+                    onPress={() => startEditing(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Edit ${item.title}`}>
+                    <Text style={[styles.title, item.done && styles.done]}>{item.title}</Text>
+                  </Pressable>
+                  {/* Outside the button, whose label would otherwise hide the date from VoiceOver. */}
+                  <DueLabel todo={item} today={today} onPress={() => startEditing(item)} />
+                </View>
               </View>
               {canReorder && (
                 <View style={styles.moveActions}>
@@ -544,6 +588,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  editBlock: {
+    paddingBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#ccc',
+  },
+  editRow: {
+    paddingBottom: 0,
+    borderBottomWidth: 0,
+  },
+  dueInput: {
+    flex: 0,
+    marginTop: 8,
   },
   titlePress: {
     flex: 1,
