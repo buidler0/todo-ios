@@ -13,6 +13,7 @@ import {
 import { Text, View, useThemeColor } from '@/components/Themed';
 import Colors from '@/constants/Colors';
 import { useColorScheme } from '@/components/useColorScheme';
+import { TagFilter, listTags, tagKey, titleTags } from '@/components/TagFilter';
 
 const STORAGE_KEY = 'todos';
 const FILTER_KEY = 'filter';
@@ -96,6 +97,7 @@ export default function TodoScreen() {
   const [editDraft, setEditDraft] = useState('');
   const [filter, setFilter] = useState<Filter>('All');
   const [query, setQuery] = useState('');
+  const [tag, setTag] = useState<string | null>(null);
   const [duplicateIn, setDuplicateIn] = useState<'add' | 'edit' | null>(null);
   const [undo, setUndo] = useState<Undo | null>(null);
   const colorScheme = useColorScheme();
@@ -128,11 +130,15 @@ export default function TodoScreen() {
   }, [todos, loaded]);
 
   const term = query.trim().toLowerCase();
+  const tags = listTags(todos.map((t) => t.title));
+  // A tag no title carries any more filters nothing, so the list never gets stuck empty.
+  const activeTag = tags.find((name) => tag !== null && tagKey(name) === tagKey(tag)) ?? null;
   const visibleTodos = pinnedFirst(todos)
     .filter(FILTERS[filter])
-    .filter((t) => t.title.toLowerCase().includes(term));
+    .filter((t) => t.title.toLowerCase().includes(term))
+    .filter((t) => !activeTag || titleTags(t.title).some((x) => tagKey(x) === tagKey(activeTag)));
   // Only the unfiltered list is the full list, so a swap there is a swap in `todos`.
-  const canReorder = filter === 'All' && !term;
+  const canReorder = filter === 'All' && !term && !activeTag;
   const remaining = todos.filter((t) => !t.done).length;
 
   useEffect(() => {
@@ -314,13 +320,14 @@ export default function TodoScreen() {
             );
           })}
         </View>
+        <TagFilter tags={tags} selected={activeTag} onSelect={setTag} />
         <FlatList
           data={visibleTodos}
           keyboardShouldPersistTaps="handled"
           keyExtractor={(t) => t.id}
           ListEmptyComponent={
             <Text style={styles.empty}>
-              {term
+              {term || activeTag
                 ? 'No matching to-dos.'
                 : todos.length
                   ? `No ${filter.toLowerCase()} to-dos.`
