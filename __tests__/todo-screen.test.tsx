@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
+import { AppState } from 'react-native';
 
 import TodoScreen from '@/app/(tabs)/index';
 
@@ -820,8 +821,8 @@ test('shows Overdue for a to-do not done whose date has passed, and the date onc
 });
 
 test('a to-do due today is not overdue, and one due yesterday is', async () => {
-  await renderWithThree();
   jest.useFakeTimers({ now: new Date(2026, 10, 3, 23, 59) });
+  await renderWithThree();
 
   setDue('Buy milk', '2026-11-03');
   setDue('Buy bread', '2026-11-02');
@@ -829,6 +830,33 @@ test('a to-do due today is not overdue, and one due yesterday is', async () => {
   expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
   expect(screen.getByText('Overdue')).toBeOnTheScreen();
   expect(screen.queryByText('Due 2026-11-02')).toBeNull();
+});
+
+test('a to-do due today turns Overdue at the next midnight', async () => {
+  jest.useFakeTimers({ now: new Date(2026, 10, 3, 23, 59) });
+  await renderWithThree();
+  setDue('Buy milk', '2026-11-03');
+
+  act(() => jest.advanceTimersByTime(59_999));
+  expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
+
+  act(() => jest.advanceTimersByTime(1));
+  expect(screen.getByText('Overdue')).toBeOnTheScreen();
+  expect(screen.queryByText('Due 2026-11-03')).toBeNull();
+});
+
+test('a to-do due today shows Overdue when the app comes back on a later day', async () => {
+  jest.useFakeTimers({ now: new Date(2026, 10, 3, 9, 0) });
+  await renderWithThree();
+  setDue('Buy milk', '2026-11-03');
+
+  jest.setSystemTime(new Date(2026, 10, 4, 8, 0));
+  const onChange = jest.mocked(AppState.addEventListener).mock.calls.at(-1)![1];
+  act(() => onChange('background'));
+  expect(screen.getByText('Due 2026-11-03')).toBeOnTheScreen();
+
+  act(() => onChange('active'));
+  expect(screen.getByText('Overdue')).toBeOnTheScreen();
 });
 
 test('refuses a due date of the wrong shape or a day that does not exist, and stays in editing', async () => {
